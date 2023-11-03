@@ -40,7 +40,6 @@ module lab3_cache_CacheBaseCtrl
     // Control signals (ctrl -> dpath)
     output logic tarray_en,
     output logic tarray_wen,
-    output logic tag_sel,
 
     output logic count_en,
     output logic count_reset,
@@ -50,7 +49,7 @@ module lab3_cache_CacheBaseCtrl
     output logic darray_wen,
     output logic index_sel,
     output logic word_en_sel,
-    output logic mem_action,
+    output logic [2:0] mem_action,
 
     output logic clean_set,
     output logic dirty_set,
@@ -81,11 +80,11 @@ localparam R0 = 3'd2; // Refill data
 localparam MD = 3'd3; // Data access (R/W)
 localparam FL = 3'd4; // Flush
 
-logic [1:0] state;
-logic [1:0] nextState;
+logic [2:0] state;
+logic [2:0] nextState;
 
 // State register
-always_ff @(posedge clk, posedge reset) begin
+always_ff @(posedge clk) begin
     if (reset) state <= MT;
     else state <= nextState;
 end
@@ -93,7 +92,7 @@ end
 always_comb begin
     case(state)
         MT: begin // Wait for request and check tag
-            // Ready to receive new req from proc, read data out upon read hit
+            // Ready to receive new req from proc if it is ready to respond, read data out upon read hit
             memreq_rdy = 1'b1;
             if (memreq_val && tarray_match && line_valid) memresp_val = 1'b1;
             else memresp_val = 1'b0;
@@ -101,7 +100,7 @@ always_comb begin
             // Not requesting from imem
             cache_req_val = 1'b0;
             cache_resp_rdy = 1'b0;
-            mem_action = 1'b0;
+            mem_action = READ;
 
             // Not flushing
             flush_done = 1'b0;
@@ -111,14 +110,18 @@ always_comb begin
             tarray_wen = 1'b0;
 
             // Access data, write to array word if write hit and set line to dirty, read from array word if read hit
-            darray_en = 1'b1;
-            if (tarray_match && line_valid && memreq_msg.type_ == READ) begin
-                darray_wen = 1'b0;
-                dirty_set = 1'b0;
-            end
-            else begin
+            if (memreq_val && tarray_match && line_valid && memreq_msg.type_ == WRITE) begin
+                darray_en = 1'b1;
                 darray_wen = 1'b1;
                 dirty_set = 1'b1;
+            end else if (memreq_val && tarray_match && line_valid && memreq_msg.type_ == READ) begin
+                darray_en = 1'b1;
+                darray_wen = 1'b0;
+                dirty_set = 1'b0;
+            end else begin
+                darray_en = 1'b0;
+                darray_wen = 1'b0;
+                dirty_set = 1'b0;
             end
             word_en_sel = OFF;
             clean_set = 1'b0;
@@ -130,11 +133,13 @@ always_comb begin
             count_en = 1'b0;
             count_reset = 1'b1;
 
+            get_next_flush_line = 1'b0;
+
             // Go to MD if cache req and tag match, go to R0 if no match and clean, go to E0 if no match and dirty
             // Flush if cache waiting for proc req but flush req received
             if (!memreq_val && flush) nextState = FL;
-            else if (memreq_val && !tarray_match && !line_dirty) nextState = R0;
-            else if (memreq_val && !tarray_match && line_dirty) nextState = E0;
+            else if ((!tarray_match && !line_dirty) || !line_valid) nextState = R0;
+            else if (!tarray_match && line_dirty) nextState = E0;
             else nextState = MT;
         end
         E0: begin // Evict data from memory if dirty
@@ -163,6 +168,8 @@ always_comb begin
             index_sel = IDX;
             write_data_sel = PROC;
             valid_set = 1'b0;
+
+            get_next_flush_line = 1'b0;
 
             // Enable counter if memory has a result from the request
             if (!cache_resp_val) count_en = 1'b0; // do not enable counter update if memory doesn't have a response
@@ -197,7 +204,6 @@ always_comb begin
 
             // Write data, select word from count, set line to clean, set line to valid
             darray_en = 1'b1;
-            darray_wen = 1'b1;
             word_en_sel = REFILL;
             clean_set = 1'b1;
             dirty_set = 1'b0;
@@ -208,13 +214,21 @@ always_comb begin
             // Do not reset counter
             count_reset = 1'b0;
 
+            get_next_flush_line = 1'b0;
+
             // Enable counter if memory has a result from the request
-            if (!cache_resp_val) count_en = 1'b0; // do not enable counter update if memory doesn't have a response
-            else count_en = 1'b1; // enable increment to counter if memory response ready
+            if (!cache_resp_val) begin
+                count_en = 1'b0; // do not enable counter update if memory doesn't have a response
+                darray_wen = 1'b0;
+            end
+            else begin
+                count_en = 1'b1; // enable increment to counter if memory response ready
+                darray_wen = 1'b1;
+            end
 
             // Go to R0 if refill of line is done
-            if (count_done) nextState = R0;
-            else nextState = E0;
+            if (count_done) nextState = MD;
+            else nextState = R0;
         end
         MD: begin // Perform data access and respond to proc if read
             // Not ready to receive new req from proc, output value ready
@@ -224,7 +238,7 @@ always_comb begin
             // No imem access
             cache_req_val = 1'b0;
             cache_resp_rdy = 1'b0;
-            mem_action = 1'b0;
+            mem_action = READ;
 
             // Not flushing
             flush_done = 1'b0;
@@ -252,6 +266,8 @@ always_comb begin
             index_sel = IDX;
             write_data_sel = PROC;
             valid_set = 1'b0;
+
+            get_next_flush_line = 1'b0;
 
             // Go to MT if proc was ready to receive data
             if (memresp_rdy && !flush) nextState = MT;
@@ -302,10 +318,32 @@ always_comb begin
             else begin
                 count_reset = 1'b0;
                 get_next_flush_line = 1'b0;
+                flush_done = 1'b0;
                 nextState = FL;
-                count_reset = 1'b0;
             end
                 
+        end
+        default: begin
+            memreq_rdy = 1'b0;
+            memresp_val = 1'b0;
+            cache_req_val = 1'b0;
+            cache_resp_rdy = 1'b0;
+            mem_action = READ;
+            flush_done = 1'b0;
+            tarray_en = 1'b0;
+            tarray_wen = 1'b0;
+            darray_en = 1'b0;
+            darray_wen = 1'b0;
+            word_en_sel = OFF;
+            clean_set = 1'b0;
+            dirty_set = 1'b0;
+            index_sel = IDX;
+            write_data_sel = PROC;
+            valid_set = 1'b0;
+            count_en = 1'b0;
+            count_reset = 1'b1;
+            get_next_flush_line = 1'b0;
+            nextState = MT;
         end
     endcase
 end

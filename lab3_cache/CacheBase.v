@@ -43,7 +43,7 @@ module lab3_cache_CacheBase
 logic tarray_match;
 logic line_dirty;
 logic line_valid;
-logic mem_action;
+logic [2:0] mem_action;
 logic all_flushed;
 logic get_next_flush_line;
 
@@ -52,7 +52,6 @@ logic count_done;
 // Control signals (ctrl -> dpath)
 logic tarray_en;
 logic tarray_wen;
-logic tag_sel;
 
 logic count_en;
 logic count_reset;
