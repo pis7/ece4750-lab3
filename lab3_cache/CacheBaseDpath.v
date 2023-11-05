@@ -35,13 +35,16 @@ module lab3_cache_CacheBaseDpath
     output logic line_dirty,
     output logic line_valid,
 
-    output logic count_done,
+    output logic req_count_done,
+    output logic resp_count_done,
 
     // Control signals (ctrl -> dpath)
+    input logic input_en,
     input logic tarray_en,
     input logic tarray_wen,
 
-    input logic count_en,
+    input logic req_count_en,
+    input logic resp_count_en,
     input logic count_reset,
 
     input logic write_data_sel,
@@ -129,12 +132,13 @@ vc_Mux2#(5) index_mux
 );
 
 // -- Select write word offset source
-logic [3:0] inc_word;
+logic [3:0] resp_inc_word;
+logic [3:0] req_inc_word;
 
 vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(inc_word),
+    .in1(resp_inc_word),
     .sel(write_word_sel),
     .out(d_word)
 );
@@ -145,7 +149,7 @@ logic [3:0] read_word_offset;
 vc_Mux2#(4) read_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(inc_word),
+    .in1(resp_inc_word),
     .sel(read_word_sel),
     .out(read_word_offset)
 );
@@ -214,23 +218,44 @@ end
 
 // Refill/eviction counters ---------------------------------------
 
-logic [3:0] inc_out;
+logic [3:0] req_inc_out;
 
-vc_EnResetReg#(4, 0) count_reg
+vc_EnResetReg#(4, 0) req_count_reg
 (
     .clk(clk),
     .reset(count_reset),
-    .en(count_en),
-    .d(inc_out),
-    .q(inc_word)
+    .en(req_count_en),
+    .d(req_inc_out),
+    .q(req_inc_word)
 );
 
-assign count_done = (inc_out == 4'd15);
+assign req_count_done = (req_inc_out == 4'd15);
 
-vc_Incrementer#(4, 1) word_incrementer
+vc_Incrementer#(4, 1) req_incrementer
 (
-  .in(inc_word),
-  .out(inc_out)  
+  .in(req_inc_word),
+  .out(req_inc_out)  
+);
+
+// ---
+
+logic [3:0] resp_inc_out;
+
+vc_EnResetReg#(4, 0) resp_count_reg
+(
+    .clk(clk),
+    .reset(count_reset),
+    .en(resp_count_en),
+    .d(resp_inc_out),
+    .q(resp_inc_word)
+);
+
+assign resp_count_done = (resp_inc_out == 4'd15);
+
+vc_Incrementer#(4, 1) resp_incrementer
+(
+  .in(resp_inc_word),
+  .out(resp_inc_out)  
 );
 
 // Dirty array ---------------------------------------------------
@@ -259,7 +284,7 @@ assign line_valid = (valid[incoming_index] == 1'b1);
 // Memory messages ---------------------------------------
 
 logic [31:0] req_addr_imem;
-assign req_addr_imem = {incoming_tag, incoming_index, inc_word, memreq_msg.data[1:0]};
+assign req_addr_imem = {incoming_tag, incoming_index, req_inc_word, memreq_msg.data[1:0]};
 
 // imem msg
 assign cache_req_msg.type_ = mem_action;

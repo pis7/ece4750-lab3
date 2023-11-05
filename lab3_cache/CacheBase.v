@@ -15,7 +15,6 @@ module lab3_cache_CacheBase
   input  logic                    clk,
   input  logic                    reset,
 
-
   // imem: connection between proc and cache
   input  logic                    memreq_val,
   output logic                    memreq_rdy,
@@ -47,13 +46,15 @@ logic [2:0] mem_action;
 logic all_flushed;
 logic get_next_flush_line;
 
-logic count_done;
+logic req_count_done;
+logic resp_count_done;
 
 // Control signals (ctrl -> dpath)
 logic tarray_en;
 logic tarray_wen;
 
-logic count_en;
+logic req_count_en;
+logic resp_count_en;
 logic count_reset;
 
 logic write_data_sel;
@@ -67,6 +68,8 @@ logic clean_set;
 logic dirty_set;
 
 logic valid_set;
+
+logic input_en;
 
 lab3_cache_CacheBaseCtrl ctrl
 (
