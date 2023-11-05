@@ -25,9 +25,9 @@ module lab3_cache_CacheBaseDpath
     input  mem_resp_4B_t             cache_resp_msg,
 
     // flush
-    input logic                     flush,
+    input logic flush,
     output logic all_flushed,
-    input logic                    flush_done,
+    input logic flush_done,
     input logic get_next_flush_line,
 
     // Status signals (dpath -> ctrl)
@@ -48,7 +48,8 @@ module lab3_cache_CacheBaseDpath
     input logic darray_en,
     input logic darray_wen,
     input logic index_sel,
-    input logic word_en_sel,
+    input logic write_word_sel,
+    input logic read_word_sel,
     input logic [2:0] mem_action,
 
     input logic clean_set,
@@ -73,18 +74,20 @@ assign incoming_word_offset = address[5:2];
 assign address = memreq_msg.addr;
 assign proc_write_data = memreq_msg.data;
 
-// vc_ResetReg#(32, 0) addr_reg
+// vc_EnResetReg#(32, 0) addr_reg
 // (
 //     .clk(clk),
 //     .reset(reset),
+//     .en(input_en),
 //     .d(memreq_msg.addr),
 //     .q(address)
 // );
 
-// vc_ResetReg#(32, 0) data_reg
+// vc_EnResetReg#(32, 0) data_reg
 // (
 //     .clk(clk),
 //     .reset(reset),
+//     .en(input_en),
 //     .d(memreq_msg.data),
 //     .q(proc_write_data)
 // );
@@ -125,15 +128,26 @@ vc_Mux2#(5) index_mux
     .out(d_index)
 );
 
-// -- Select word offset source
+// -- Select write word offset source
 logic [3:0] inc_word;
 
 vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
     .in1(inc_word),
-    .sel(word_en_sel),
+    .sel(write_word_sel),
     .out(d_word)
+);
+
+logic [3:0] read_word_offset;
+
+// -- Select read word offset source
+vc_Mux2#(4) read_data_word_mux
+(
+    .in0(incoming_word_offset),
+    .in1(inc_word),
+    .sel(read_word_sel),
+    .out(read_word_offset)
 );
 
 logic [31:0] imem_resp_data;
@@ -162,7 +176,7 @@ vc_Mux8#(32) word_out_lower_eight_mux
     .in5(data[d_index][5]),
     .in6(data[d_index][6]),
     .in7(data[d_index][7]),
-    .sel(incoming_word_offset[2:0]),
+    .sel(read_word_offset[2:0]),
     .out(word_out_lower)
 );
 
@@ -176,7 +190,7 @@ vc_Mux8#(32) word_out_upper_eight_mux
     .in5(data[d_index][13]),
     .in6(data[d_index][14]),
     .in7(data[d_index][15]),
-    .sel(incoming_word_offset[2:0]),
+    .sel(read_word_offset[2:0]),
     .out(word_out_upper)
 );
 
@@ -186,7 +200,7 @@ vc_Mux2#(32) word_out_final_mux
 (
     .in0(word_out_lower),
     .in1(word_out_upper),
-    .sel(incoming_word_offset[3]),
+    .sel(read_word_offset[3]),
     .out(data_word_mux_out)
 );
 
@@ -198,7 +212,7 @@ always_comb begin
     else cache_data_out = 'hx;
 end
 
-// Refill/eviction counter ---------------------------------------
+// Refill/eviction counters ---------------------------------------
 
 logic [3:0] inc_out;
 

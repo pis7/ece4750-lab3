@@ -60,7 +60,8 @@ logic write_data_sel;
 logic darray_en;
 logic darray_wen;
 logic index_sel;
-logic word_en_sel;
+logic write_word_sel;
+logic read_word_sel;
 
 logic clean_set;
 logic dirty_set;
@@ -69,29 +70,6 @@ logic valid_set;
 
 lab3_cache_CacheBaseCtrl ctrl
 (
-  // .clk(clk),
-  // .reset(reset),
-
-  // .memreq_val(mem_req_val),
-  // .memreq_rdy(memreq_rdy),
-  // .memreq_msg(memreq_msg),
-
-  // .memresp_val(memresp_val),
-  // .memresp_rdy(memresp_rdy),
-  // .memresp_msg(memresp_msg),
-
-  // .cache_req_val(cache_req_val),
-  // .cache_req_rdy(cache_req_rdy),
-  // .cache_req_msg(cache_req_msg),
-
-  // .cache_resp_val(cache_resp_val),
-  // .cache_resp_rdy(cache_resp_rdy),
-  // .cache_resp_msg(cache_resp_msg),
-
-  // .flush(flush),
-  // .flush_done(flush_done),
-
-  // .tarray_match(tarray_match)
   .*
 );
 
