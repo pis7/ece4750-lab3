@@ -42,20 +42,26 @@ module lab3_cache_CacheBase
 logic tarray_match;
 logic line_dirty;
 logic line_valid;
-logic [2:0] mem_action;
+logic mem_action;
 logic all_flushed;
 logic get_next_flush_line;
+logic incoming_mem_type;
 
-logic req_count_done;
-logic resp_count_done;
+logic refill_req_count_done;
+logic refill_resp_count_done;
+logic evict_req_count_done;
+logic evict_resp_count_done;
 
 // Control signals (ctrl -> dpath)
 logic tarray_en;
 logic tarray_wen;
 
-logic req_count_en;
-logic resp_count_en;
-logic count_reset;
+logic refill_req_count_en;
+logic refill_resp_count_en;
+logic refill_count_reset;
+logic evict_req_count_en;
+logic evict_resp_count_en;
+logic evict_count_reset;
 
 logic write_data_sel;
 logic darray_en;
@@ -70,6 +76,7 @@ logic dirty_set;
 logic valid_set;
 
 logic input_en;
+logic [2:0] state;
 
 lab3_cache_CacheBaseCtrl ctrl
 (

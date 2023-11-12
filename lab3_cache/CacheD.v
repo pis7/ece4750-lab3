@@ -8,6 +8,8 @@
 `include "vc/mem-msgs.v"
 `include "CacheBypass.v"
 `include "CacheAlt.v"
+`include "CacheBase.v"
+
 
 module lab3_cache_CacheD
 (
@@ -91,7 +93,7 @@ icache (
   .flush_done(flush_done1)
 );
 
-lab3_cache_CacheAlt
+lab3_cache_CacheBase
 dcache (
   .clk(clk),
   .reset(reset),  

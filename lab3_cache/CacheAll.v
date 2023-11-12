@@ -1,16 +1,16 @@
 //=========================================================================
-// Cache Both set as bypass
+// Cache Both
 //=========================================================================
 
-`ifndef LAB3_CACHE_CACHE_NONE_V
-`define LAB3_CACHE_CACHE_NONE_V
+`ifndef LAB3_CACHE_CACHE_ALL_V
+`define LAB3_CACHE_CACHE_ALL_V
 
 `include "vc/mem-msgs.v"
 `include "CacheBypass.v"
 `include "CacheBase.v"
 `include "CacheAlt.v"
 
-module lab3_cache_CacheNone
+module lab3_cache_CacheAll
 (
   input  logic                    clk,
   input  logic                    reset,
@@ -124,4 +124,4 @@ dcache (
 endmodule
 
 
-`endif /* LAB3_CACHE_CACHE_BYPASS_V */
+`endif /* LAB3_CACHE_CACHE_ALL_V */

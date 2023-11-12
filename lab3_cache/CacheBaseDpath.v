@@ -34,18 +34,24 @@ module lab3_cache_CacheBaseDpath
     output logic tarray_match,
     output logic line_dirty,
     output logic line_valid,
+    output logic incoming_mem_type,
 
-    output logic req_count_done,
-    output logic resp_count_done,
+    output logic refill_req_count_done,
+    output logic refill_resp_count_done,
+    output logic evict_req_count_done,
+    output logic evict_resp_count_done,
 
     // Control signals (ctrl -> dpath)
     input logic input_en,
     input logic tarray_en,
     input logic tarray_wen,
 
-    input logic req_count_en,
-    input logic resp_count_en,
-    input logic count_reset,
+    input logic refill_req_count_en,
+    input logic refill_resp_count_en,
+    input logic refill_count_reset,
+    input logic evict_req_count_en,
+    input logic evict_resp_count_en,
+    input logic evict_count_reset,
 
     input logic write_data_sel,
     input logic darray_en,
@@ -53,47 +59,51 @@ module lab3_cache_CacheBaseDpath
     input logic index_sel,
     input logic write_word_sel,
     input logic read_word_sel,
-    input logic [2:0] mem_action,
+    input logic mem_action,
 
     input logic clean_set,
     input logic dirty_set,
 
-    input logic valid_set
+    input logic valid_set,
+    input logic [2:0] state
 );
+
+// FSM states
+localparam ID = 3'd0; // Idle
+localparam MT = 3'd1; // Check tag
+localparam E0 = 3'd2; // Evict data
+localparam R0 = 3'd3; // Refill data
+localparam MD = 3'd4; // Data access (R/W)
+localparam FL = 3'd5; // Flush
 
 logic [31:0] address;
 logic [31:0] proc_write_data;
 
 // Decode incoming address from processor ---------------------------------------
+logic [76:0] incoming_msg;
 logic [20:0] incoming_tag;
 logic [4:0] incoming_index;
 logic [3:0] incoming_word_offset;
 
+assign address = incoming_msg[65:34];
 assign incoming_tag = address[31:11];
 assign incoming_index = address[10:6];
 assign incoming_word_offset = address[5:2];
+assign incoming_mem_type = incoming_msg[74];
+assign proc_write_data = incoming_msg[31:0];
 
 // Inputs from proceessor ------------------------------------------
-assign address = memreq_msg.addr;
-assign proc_write_data = memreq_msg.data;
+// assign address = memreq_msg.addr;
+// assign proc_write_data = memreq_msg.data;
 
-// vc_EnResetReg#(32, 0) addr_reg
-// (
-//     .clk(clk),
-//     .reset(reset),
-//     .en(input_en),
-//     .d(memreq_msg.addr),
-//     .q(address)
-// );
-
-// vc_EnResetReg#(32, 0) data_reg
-// (
-//     .clk(clk),
-//     .reset(reset),
-//     .en(input_en),
-//     .d(memreq_msg.data),
-//     .q(proc_write_data)
-// );
+vc_EnResetReg#(77, 0) addr_reg
+(
+    .clk(clk),
+    .reset(reset),
+    .en(input_en),
+    .d(memreq_msg),
+    .q(incoming_msg)
+);
 
 // Tag array ---------------------------------------
 logic [20:0] tag [31:0];
@@ -112,12 +122,12 @@ assign tarray_match = ((incoming_tag == tag[incoming_index]) && tarray_en);
 logic [31:0] data [31:0][15:0];
 
 logic [4:0] d_index;
-logic [3:0] d_word;
-logic [31:0] d_data;
+logic [3:0] write_word_offset;
+logic [31:0] write_data;
 
 // -- Data array write logic
 always_ff @(posedge clk) begin
-    if (darray_en && darray_wen) data[d_index][d_word] <= d_data;
+    if (darray_en && darray_wen) data[d_index][write_word_offset] <= write_data;
 end
 
 // -- Select index source
@@ -132,15 +142,13 @@ vc_Mux2#(5) index_mux
 );
 
 // -- Select write word offset source
-logic [3:0] resp_inc_word;
-logic [3:0] req_inc_word;
 
 vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(resp_inc_word),
+    .in1(evict_resp_word[3:0]),
     .sel(write_word_sel),
-    .out(d_word)
+    .out(write_word_offset)
 );
 
 logic [3:0] read_word_offset;
@@ -149,7 +157,7 @@ logic [3:0] read_word_offset;
 vc_Mux2#(4) read_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(resp_inc_word),
+    .in1(evict_req_word[3:0]),
     .sel(read_word_sel),
     .out(read_word_offset)
 );
@@ -163,7 +171,7 @@ vc_Mux2#(32) write_data_source_mux
     .in0(proc_write_data),
     .in1(imem_resp_data),
     .sel(write_data_sel),
-    .out(d_data)
+    .out(write_data)
 );
 
 // -- Select word output from array
@@ -216,46 +224,92 @@ always_comb begin
     else cache_data_out = 'hx;
 end
 
-// Refill/eviction counters ---------------------------------------
+// Refill counters ---------------------------------------
 
-logic [3:0] req_inc_out;
+logic [4:0] refill_req_inc_out;
+logic [4:0] refill_req_word;
 
-vc_EnResetReg#(4, 0) req_count_reg
+vc_EnResetReg#(5, 0) refill_req_count_reg
 (
     .clk(clk),
-    .reset(count_reset),
-    .en(req_count_en),
-    .d(req_inc_out),
-    .q(req_inc_word)
+    .reset(refill_count_reset),
+    .en(refill_req_count_en),
+    .d(refill_req_inc_out),
+    .q(refill_req_word)
 );
 
-assign req_count_done = (req_inc_out == 4'd15);
+assign refill_req_count_done = (refill_req_word == 5'd16);
 
-vc_Incrementer#(4, 1) req_incrementer
+vc_Incrementer#(5, 1) refill_req_incrementer
 (
-  .in(req_inc_word),
-  .out(req_inc_out)  
+  .in(refill_req_word),
+  .out(refill_req_inc_out)  
 );
 
 // ---
 
-logic [3:0] resp_inc_out;
+logic [4:0] refill_resp_inc_out;
+logic [4:0] refill_resp_word;
 
-vc_EnResetReg#(4, 0) resp_count_reg
+vc_EnResetReg#(5, 0) refill_resp_count_reg
 (
     .clk(clk),
-    .reset(count_reset),
-    .en(resp_count_en),
-    .d(resp_inc_out),
-    .q(resp_inc_word)
+    .reset(refill_count_reset),
+    .en(refill_resp_count_en),
+    .d(refill_resp_inc_out),
+    .q(refill_resp_word)
 );
 
-assign resp_count_done = (resp_inc_out == 4'd15);
+assign refill_resp_count_done = (refill_resp_word == 5'd16);
 
-vc_Incrementer#(4, 1) resp_incrementer
+vc_Incrementer#(5, 1) refill_resp_incrementer
 (
-  .in(resp_inc_word),
-  .out(resp_inc_out)  
+  .in(refill_resp_word),
+  .out(refill_resp_inc_out)  
+);
+
+// Evict counters ---------------------------------------
+
+logic [4:0] evict_req_inc_out;
+logic [4:0] evict_req_word;
+
+vc_EnResetReg#(5, 0) evict_req_count_reg
+(
+    .clk(clk),
+    .reset(evict_count_reset),
+    .en(evict_req_count_en),
+    .d(evict_req_inc_out),
+    .q(evict_req_word)
+);
+
+assign evict_req_count_done = (evict_req_word == 5'd16);
+
+vc_Incrementer#(5, 1) evict_req_incrementer
+(
+  .in(evict_req_word),
+  .out(evict_req_inc_out)  
+);
+
+// ---
+
+logic [4:0] evict_resp_inc_out;
+logic [4:0] evict_resp_word;
+
+vc_EnResetReg#(5, 0) evict_resp_count_reg
+(
+    .clk(clk),
+    .reset(evict_count_reset),
+    .en(evict_resp_count_en),
+    .d(evict_resp_inc_out),
+    .q(evict_resp_word)
+);
+
+assign evict_resp_count_done = (evict_resp_word == 5'd16);
+
+vc_Incrementer#(5, 1) evict_resp_incrementer
+(
+  .in(evict_resp_word),
+  .out(evict_resp_inc_out)  
 );
 
 // Dirty array ---------------------------------------------------
@@ -264,8 +318,8 @@ logic [31:0] dirty;
 // -- Bit set and status signal logic
 always_ff @(posedge clk) begin
     if (reset) dirty[31:0] <= 32'd0;
-    else if (clean_set) dirty[incoming_index] <= 1'b0;
-    else if (dirty_set) dirty[incoming_index] <= 1'b1;
+    else if (clean_set) dirty[d_index] <= 1'b0;
+    else if (dirty_set) dirty[d_index] <= 1'b1;
 end
 
 assign line_dirty = (dirty[incoming_index] == 1'b1);
@@ -284,10 +338,17 @@ assign line_valid = (valid[incoming_index] == 1'b1);
 // Memory messages ---------------------------------------
 
 logic [31:0] req_addr_imem;
-assign req_addr_imem = {incoming_tag, incoming_index, req_inc_word, memreq_msg.data[1:0]};
+always_comb begin
+    if (!flush) begin
+        if (state == E0) assign req_addr_imem = {tag[incoming_index], incoming_index, evict_req_word[3:0], address[1:0]};
+        else assign req_addr_imem = {incoming_tag, incoming_index, evict_req_word[3:0], address[1:0]};
+    end else begin
+        assign req_addr_imem = {tag[flush_index], flush_index, evict_req_word[3:0], 2'b00};
+    end
+end
 
 // imem msg
-assign cache_req_msg.type_ = mem_action;
+assign cache_req_msg.type_ = {2'b00, mem_action};
 assign cache_req_msg.opaque = 8'b0;
 assign cache_req_msg.addr = req_addr_imem;
 assign cache_req_msg.len = 2'd0;
@@ -305,38 +366,38 @@ assign all_flushed = (dirty == 32'd0);
 
 // -- Select next flush line (1st line that is dirty)
 always_comb begin
-    if (dirty[0] && get_next_flush_line) flush_index = 5'd0;
-    else if (dirty[1] && get_next_flush_line) flush_index = 5'd1;
-    else if (dirty[2] && get_next_flush_line) flush_index = 5'd2;
-    else if (dirty[3] && get_next_flush_line) flush_index = 5'd3;
-    else if (dirty[4] && get_next_flush_line) flush_index = 5'd4;
-    else if (dirty[5] && get_next_flush_line) flush_index = 5'd5;
-    else if (dirty[6] && get_next_flush_line) flush_index = 5'd6;
-    else if (dirty[7] && get_next_flush_line) flush_index = 5'd7;
-    else if (dirty[8] && get_next_flush_line) flush_index = 5'd8;
-    else if (dirty[9] && get_next_flush_line) flush_index = 5'd9;
-    else if (dirty[10] && get_next_flush_line) flush_index = 5'd10;
-    else if (dirty[11] && get_next_flush_line) flush_index = 5'd11;
-    else if (dirty[12] && get_next_flush_line) flush_index = 5'd12;
-    else if (dirty[13] && get_next_flush_line) flush_index = 5'd13;
-    else if (dirty[14] && get_next_flush_line) flush_index = 5'd14;
-    else if (dirty[15] && get_next_flush_line) flush_index = 5'd15;
-    else if (dirty[16] && get_next_flush_line) flush_index = 5'd16;
-    else if (dirty[17] && get_next_flush_line) flush_index = 5'd17;
-    else if (dirty[18] && get_next_flush_line) flush_index = 5'd18;
-    else if (dirty[19] && get_next_flush_line) flush_index = 5'd19;
-    else if (dirty[20] && get_next_flush_line) flush_index = 5'd20;
-    else if (dirty[21] && get_next_flush_line) flush_index = 5'd21;
-    else if (dirty[22] && get_next_flush_line) flush_index = 5'd22;
-    else if (dirty[23] && get_next_flush_line) flush_index = 5'd23;
-    else if (dirty[24] && get_next_flush_line) flush_index = 5'd24;
-    else if (dirty[25] && get_next_flush_line) flush_index = 5'd25;
-    else if (dirty[26] && get_next_flush_line) flush_index = 5'd26;
-    else if (dirty[27] && get_next_flush_line) flush_index = 5'd27;
-    else if (dirty[28] && get_next_flush_line) flush_index = 5'd28;
-    else if (dirty[29] && get_next_flush_line) flush_index = 5'd29;
-    else if (dirty[30] && get_next_flush_line) flush_index = 5'd30;
-    else if (dirty[31] && get_next_flush_line) flush_index = 5'd31;
+    if (dirty[0]) flush_index = 5'd0;
+    else if (dirty[1]) flush_index = 5'd1;
+    else if (dirty[2]) flush_index = 5'd2;
+    else if (dirty[3]) flush_index = 5'd3;
+    else if (dirty[4]) flush_index = 5'd4;
+    else if (dirty[5]) flush_index = 5'd5;
+    else if (dirty[6]) flush_index = 5'd6;
+    else if (dirty[7]) flush_index = 5'd7;
+    else if (dirty[8]) flush_index = 5'd8;
+    else if (dirty[9]) flush_index = 5'd9;
+    else if (dirty[10]) flush_index = 5'd10;
+    else if (dirty[11]) flush_index = 5'd11;
+    else if (dirty[12]) flush_index = 5'd12;
+    else if (dirty[13]) flush_index = 5'd13;
+    else if (dirty[14]) flush_index = 5'd14;
+    else if (dirty[15]) flush_index = 5'd15;
+    else if (dirty[16]) flush_index = 5'd16;
+    else if (dirty[17]) flush_index = 5'd17;
+    else if (dirty[18]) flush_index = 5'd18;
+    else if (dirty[19]) flush_index = 5'd19;
+    else if (dirty[20]) flush_index = 5'd20;
+    else if (dirty[21]) flush_index = 5'd21;
+    else if (dirty[22]) flush_index = 5'd22;
+    else if (dirty[23]) flush_index = 5'd23;
+    else if (dirty[24]) flush_index = 5'd24;
+    else if (dirty[25]) flush_index = 5'd25;
+    else if (dirty[26]) flush_index = 5'd26;
+    else if (dirty[27]) flush_index = 5'd27;
+    else if (dirty[28]) flush_index = 5'd28;
+    else if (dirty[29]) flush_index = 5'd29;
+    else if (dirty[30]) flush_index = 5'd30;
+    else if (dirty[31]) flush_index = 5'd31;
     else flush_index = 5'hx;
 end
 

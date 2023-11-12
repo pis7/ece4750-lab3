@@ -127,7 +127,6 @@ module lab2_proc_ProcAltCtrl
   // signals of stages in front of it in the pipeline.
 
   logic stall_F;
-  logic stall_F_imem;
   logic stall_D;
   logic stall_X;
   logic stall_M;
@@ -190,6 +189,10 @@ module lab2_proc_ProcAltCtrl
   assign ostall_F = val_F && !imem_respstream_val;
 
   // stall and squash in F
+  logic stall_F_imem;
+  logic squash_F_imem;
+
+  assign stall_F_imem  = val_F && ( ostall_D || ostall_X || ostall_M || ostall_W );
 
   assign stall_F  = val_F && ( ostall_F  || ostall_D || ostall_X || ostall_M || ostall_W );
   assign squash_F = val_F && ( osquash_D || osquash_X );
@@ -204,8 +207,8 @@ module lab2_proc_ProcAltCtrl
   // resetting.
 
   assign imem_reqstream_val  = ( !stall_F || squash_F ) && !reset;
-  assign stall_F_imem  = val_F && ( ostall_D || ostall_X || ostall_M || ostall_W );
   assign imem_respstream_rdy = !stall_F_imem || squash_F;
+
   // Valid signal for the next stage (stage D)
 
   logic  next_val_F;

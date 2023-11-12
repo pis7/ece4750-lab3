@@ -6,7 +6,7 @@
 `default_nettype none
 `timescale 1ps/1ps
 
-`include "CacheBaseCtrl.v"
+`include "CacheAltCtrl.v"
 `include "vc/trace.v"
 `include "vc/mem-msgs.v"
 
@@ -47,17 +47,22 @@ module top(  input logic clk, input logic linetrace );
     logic line_dirty;
     logic line_valid;
 
-    logic req_count_done;
-    logic resp_count_done;
+    logic refill_req_count_done;
+    logic refill_resp_count_done;
+    logic evict_req_count_done;
+    logic evict_resp_count_done;
 
     // Control signals (ctrl -> dpath)
     logic input_en;
     logic tarray_en;
     logic tarray_wen;
 
-    logic resp_count_en;
-    logic req_count_en;
-    logic count_reset;
+    logic refill_req_count_en;
+    logic refill_resp_count_en;
+    logic refill_count_reset;
+    logic evict_req_count_en;
+    logic evict_resp_count_en;
+    logic evict_count_reset;
 
     logic write_data_sel;
     logic darray_en;
@@ -65,14 +70,14 @@ module top(  input logic clk, input logic linetrace );
     logic index_sel;
     logic write_word_sel;
     logic read_word_sel;
-    logic [2:0] mem_action;
+    logic mem_action;
 
     logic clean_set;
     logic dirty_set;
 
     logic valid_set;
 
-    lab3_cache_CacheBaseCtrl DUT
+    lab3_cache_CacheAltCtrl DUT
     (
         .*
     );
@@ -80,6 +85,8 @@ module top(  input logic clk, input logic linetrace );
     // General logic
     localparam y = 1'b1;
     localparam n = 1'b0;
+    localparam r = 1'b0;
+    localparam w = 1'b1;
     localparam dc = 1'dx;
 
     // Data array write word select
@@ -104,11 +111,12 @@ module top(  input logic clk, input logic linetrace );
     localparam DCMEM = 3'dx;
 
     // FSM states
-    localparam MT = 3'd0; // Check tag
-    localparam E0 = 3'd1; // Evict data
-    localparam R0 = 3'd2; // Refill data
-    localparam MD = 3'd3; // Data access (R/W)
-    localparam FL = 3'd4; // Flush
+    localparam ID = 3'd0; // Idle
+    localparam MT = 3'd1; // Check tag
+    localparam E0 = 3'd2; // Evict data
+    localparam R0 = 3'd3; // Refill data
+    localparam MD = 3'd4; // Data access (R/W)
+    localparam FL = 3'd5; // Flush
 
     initial begin
 
@@ -122,642 +130,154 @@ module top(  input logic clk, input logic linetrace );
         // Unit Testing #1 Test Refill on Read Miss - Invalid Line
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
+
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 1: Test Refill on Read Miss - Invalid Line");
+        $display("---------------------------------------");
+
         reset = 1;
         @(negedge clk);
         reset = 0;
-        memreq_msg.type_ = READ;
-        memreq_val = n; // no value yet
-
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        
         $display("");
-        $display("Test Refill on Read Miss - Invalid Line");
-
-        @(negedge clk); // Waiting for proc to send a val request
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
+        $display("Waiting for proc to send a val request");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat  en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                 sel  sel                             fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   n,   ID, ID);
 
         delay( $urandom_range(0, 127) ); 
 
-        @(negedge clk); // Still waiting for proc to send a val request
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for proc value for random amount of time
-        memreq_val = y; // proc sends val request
-        line_valid = n; // line not valid - trigger refill
-        cache_req_rdy = n; // imem not ready to respond
-
-        @(negedge clk); // State transistion occured, should be in R0 now
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == n) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for imem to be ready
-
-        @(negedge clk); // should still be waiting in R0
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for imem to be ready
-        cache_req_rdy = y; // imem now ready to respond
-
+        $display("");
+        $display("Still waiting for proc val request");
         @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == y) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == y) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat  en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                 sel  sel                          fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   n,   ID, ID);
 
-        delay( $urandom_range(0, 127) ); // wait for imem to have response
-
-        @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == y) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == y) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for imem to have response
-        cache_resp_val = y; // imem has response
-        
-        @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == y) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == y) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == y) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", y,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == y) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", y,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", y,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == y) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", y,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", y,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for imem to have response
-        cache_req_rdy = n; // imem not ready but still has responses
-
-        @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == R0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == R0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == y) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", y,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == y) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", y,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", y,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == y) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", y,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", y,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == IMEM) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", IMEM,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == REFILL) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", REFILL,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for imem to have response
-        req_count_done = y; // refill done, wait for proc to be ready to receive, in MD
-        resp_count_done = y;
-        memresp_rdy = n;
-
-        @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MD) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MD,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MD,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MD) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MD,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MD,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == n) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.valid_set == y) begin
-            $display("valid_set is correct.  Expected: %h, Actual: %h", y,DUT.valid_set); pass();
-        end else begin
-            $display("valid_set is incorrect.  Expected: %h, Actual: %h", y,DUT.valid_set); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == PROC) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == OFF) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == OFF) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) ); // wait for proc to be ready to receive
-        
-        @(negedge clk);
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MD) begin
-            $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MD) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == n) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == PROC) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == OFF) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == OFF) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); fail(); $finish();
-        end
-        
+        $display("");
+        $display("Proc has a value now, cache not ready for it though");
         delay( $urandom_range(0, 127) );
-        memresp_rdy = y; // imem ready to receive value
-        memreq_val = n; // imem not ready to give value
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
 
-        @(negedge clk); // should be in MT now
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == n) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
+        $display("");
+        $display("Transition to MT");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                          fsh
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, n,   n,   IDX, OFF, OFF, dc, n,   n,   n,   n,   n,   MT, R0);
+
+
+        $display("");
+        $display("Transition to R0");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        delay( $urandom_range(0, 127) ); 
+        
+        $display("");
+        $display("Wait for imem to be ready");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("imem now ready to respond");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+
+        $display("");
+        $display("Still in R0, send req to imem");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                           fsh
+        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        delay( $urandom_range(0, 127) );
+
+        $display("");
+        $display("Wait for imem to have response");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
+        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("imem has response");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
+        test_outputs(n,   n,   y,   y,   y,   y,   y,   y,   n,   n,   n,   y,   IMEM, y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("imem not ready but still has responses");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
+        test_outputs(n,   n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   y,   IMEM, y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("Counts are done, transition to MD, proc not ready to receive");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(n,   y,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   n,   IDX, OFF, OFF,  dc, n,   n,   y,   n,   n,   MD, MD);
+
+        $display("");
+        $display("Proc ready to receive value");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   READ,  32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
 
         delay( $urandom_range(0, 127) );
 
@@ -765,499 +285,506 @@ module top(  input logic clk, input logic linetrace );
         // Unit Testing #2 Test Hit with Write
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
+        
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 2: Test Hit with Write");
+        $display("---------------------------------------");
+
         reset = 1;
-        @(negedge clk);
+        @(negedge clk); 
         reset = 0;
-        memreq_msg.type_ = WRITE;
-        memreq_val = n; // no value yet
 
         $display("");
-        $display("Test Hit with Write");
+        $display("Source not requesting");
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   WRITE, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
         
-        @(negedge clk); // Waiting for proc to send a val request
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
 
+        $display("");
+        $display("Hit with source requesting a write, sink not ready to receive");
         delay( $urandom_range(0, 127) );
-        memreq_val = y; // value ready for cache
-        memresp_val = n; // processor not ready to receive value;
-        line_valid = y;
-        tarray_match = y; // hit
-        
-        @(negedge clk); // Hit - still in MT
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == y) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", y,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", y,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == n) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == y) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", y,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", y,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.dirty_set == y) begin
-            $display("dirty_set is correct.  Expected: %h, Actual: %h", y,DUT.dirty_set); pass();
-        end else begin
-            $display("dirty_set is incorrect.  Expected: %h, Actual: %h", y,DUT.dirty_set); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == PROC) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == OFF) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == OFF) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); fail(); $finish();
-        end
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+       
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF,  dc, n,   y,   n,   n,   n,   MT, MT);
 
+        $display("");
+        $display("Still waiting for sink to be ready");
         delay( $urandom_range(0, 127) );
-        memreq_val = n;
-        memresp_rdy = y; // proc ready to receive value
 
-        @(negedge clk); // Proc received value, cache waiting for next request
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == n) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == n) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.dirty_set == n) begin
-            $display("dirty_set is correct.  Expected: %h, Actual: %h", n,DUT.dirty_set); pass();
-        end else begin
-            $display("dirty_set is incorrect.  Expected: %h, Actual: %h", n,DUT.dirty_set); fail(); $finish();
-        end
-        assert(DUT.write_data_sel == PROC) begin
-            $display("write_data_sel is correct.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); pass();
-        end else begin
-            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", PROC,DUT.write_data_sel); fail(); $finish();
-        end
-        assert(DUT.write_word_sel == OFF) begin
-            $display("write_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); pass();
-        end else begin
-            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.write_word_sel); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == OFF) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", OFF,DUT.read_word_sel); fail(); $finish();
-        end
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF,  dc, n,   y,   n,   n,   n,   MT, MT);
+
+        $display("");
+        $display("Sink now ready to receive value, source no longer requesting -> go to idle");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   DCMEM, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+       
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
 
         delay( $urandom_range(0, 127) );
 
         //--------------------------------------------------------------------
-        // Unit Testing #3 Dirty Line - Eviction
+        // Unit Testing #3 Dirty Line - Eviction on ReadS
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
+
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 3: Eviction on Write");
+        $display("---------------------------------------");
+
         reset = 1;
         @(negedge clk);
         reset = 0;
-        req_count_done = n;
-        resp_count_done = n;
-        memreq_msg.type_ = READ;
-        memreq_val = n; // no value yet
 
         $display("");
-        $display("Dirty Line - Eviction");
+        $display("Wait for source to send value");
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
 
-        @(negedge clk); // Waiting for proc to send a val request
-        assert(memreq_rdy == y) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", y,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", y,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.state == MT) begin
-            $display("state is correct.  Expected: %h, Actual: %h", MT,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", MT,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == MT) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", MT,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", MT,DUT.nextState); fail(); $finish();
-        end
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
 
+        $display("");
+        $display("Source has value and line is dirty -> go to MT");
         delay( $urandom_range(0, 127) );
-        line_valid = y;
-        line_dirty = y;
-        memreq_val = y; // proc gives value
-        tarray_match = n; // miss
-        cache_req_rdy = n; // imem not ready to receive request
-        cache_resp_val = n; // imem doesn't have a reponse ready
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   y,   y,   n,   n,   n,   n);
 
-        @(negedge clk); // State transistion occured, should be in E0 now
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == n) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == E0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", E0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", E0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == E0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", E0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", E0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == n) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", n,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", n,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == n) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", n,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) );
-        cache_req_rdy = y; // imem ready to receive request
-        cache_resp_val = n; // imem doesn't have a reponse ready
-
-        @(negedge clk); // State transistion occured, should be in E0 now
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == n) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == E0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", E0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", E0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == E0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", E0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", E0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == y) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == y) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == n) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", n,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", n,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == EVICT) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); fail(); $finish();
-        end
-
-        delay( $urandom_range(0, 127) );
-        cache_req_rdy = y; // imem ready to receive request
-        cache_resp_val = y; // imem has a reponse ready
-
-        @(negedge clk); // State transistion occured, should be in E0 now
-        assert(memreq_rdy == n) begin
-            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        end else begin
-            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        end
-        assert(DUT.hit == n) begin
-            $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        end else begin
-            $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        end
-        assert(DUT.state == E0) begin
-            $display("state is correct.  Expected: %h, Actual: %h", E0,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", E0,DUT.state); fail(); $finish();
-        end
-        assert(DUT.nextState == E0) begin
-            $display("nextState is correct.  Expected: %h, Actual: %h", E0,DUT.nextState); pass();
-        end else begin
-            $display("nextState is incorrect.  Expected: %h, Actual: %h", E0,DUT.nextState); fail(); $finish();
-        end
-        assert(DUT.cache_req_val == y) begin
-            $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        end else begin
-            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        end
-        assert(DUT.cache_resp_rdy == y) begin
-            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        end else begin
-            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        end
-        assert(DUT.req_count_en == y) begin
-            $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        end else begin
-            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        end
-        assert(DUT.resp_count_en == y) begin
-            $display("resp_count_en is correct.  Expected: %h, Actual: %h", y,DUT.resp_count_en); pass();
-        end else begin
-            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.resp_count_en); fail(); $finish();
-        end
-        assert(DUT.tarray_wen == n) begin
-            $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        end else begin
-            $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        end
-        assert(DUT.darray_wen == n) begin
-            $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        end else begin
-            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        end
-        assert(DUT.index_sel == IDX) begin
-            $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        end else begin
-            $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        end
-        assert(DUT.read_word_sel == EVICT) begin
-            $display("read_word_sel is correct.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); pass();
-        end else begin
-            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); fail(); $finish();
-        end
-
-        // delay( $urandom_range(0, 127) );
-        // req_count_done = y; // counts done
-        // resp_count_done = y;
-        // cache_req_rdy = n; // imem ready to receive request
-        // cache_resp_val = n; // imem has a reponse ready
-
-        // @(negedge clk); // State transistion occured, should be in R0 now
-        // assert(memreq_rdy == n) begin
-        //     $display("memreq_rdy is correct.  Expected: %h, Actual: %h", n,memreq_rdy); pass();
-        // end else begin
-        //     $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", n,memreq_rdy); fail(); $finish();
-        // end
-        // assert(DUT.hit == n) begin
-        //     $display("hit is correct.  Expected: %h, Actual: %h", n,DUT.hit); pass();
-        // end else begin
-        //     $display("hit is incorrect.  Expected: %h, Actual: %h", n,DUT.hit); fail(); $finish();
-        // end
-        // assert(DUT.state == R0) begin
-        //     $display("state is correct.  Expected: %h, Actual: %h", R0,DUT.state); pass();
-        // end else begin
-        //     $display("state is incorrect.  Expected: %h, Actual: %h", R0,DUT.state); fail(); $finish();
-        // end
-        // assert(DUT.nextState == R0) begin
-        //     $display("nextState is correct.  Expected: %h, Actual: %h", R0,DUT.nextState); pass();
-        // end else begin
-        //     $display("nextState is incorrect.  Expected: %h, Actual: %h", R0,DUT.nextState); fail(); $finish();
-        // end
-        // assert(DUT.cache_req_val == y) begin
-        //     $display("cache_req_val is correct.  Expected: %h, Actual: %h", y,DUT.cache_req_val); pass();
-        // end else begin
-        //     $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_req_val); fail(); $finish();
-        // end
-        // assert(DUT.cache_resp_rdy == y) begin
-        //     $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); pass();
-        // end else begin
-        //     $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", y,DUT.cache_resp_rdy); fail(); $finish();
-        // end
-        // assert(DUT.req_count_en == y) begin
-        //     $display("req_count_en is correct.  Expected: %h, Actual: %h", y,DUT.req_count_en); pass();
-        // end else begin
-        //     $display("req_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.req_count_en); fail(); $finish();
-        // end
-        // assert(DUT.resp_count_en == y) begin
-        //     $display("resp_count_en is correct.  Expected: %h, Actual: %h", y,DUT.resp_count_en); pass();
-        // end else begin
-        //     $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", y,DUT.resp_count_en); fail(); $finish();
-        // end
-        // assert(DUT.tarray_wen == n) begin
-        //     $display("tarray_wen is correct.  Expected: %h, Actual: %h", n,DUT.tarray_wen); pass();
-        // end else begin
-        //     $display("tarray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.tarray_wen); fail(); $finish();
-        // end
-        // assert(DUT.darray_wen == n) begin
-        //     $display("darray_wen is correct.  Expected: %h, Actual: %h", n,DUT.darray_wen); pass();
-        // end else begin
-        //     $display("darray_wen is incorrect.  Expected: %h, Actual: %h", n,DUT.darray_wen); fail(); $finish();
-        // end
-        // assert(DUT.index_sel == IDX) begin
-        //     $display("index_sel is correct.  Expected: %h, Actual: %h", IDX,DUT.index_sel); pass();
-        // end else begin
-        //     $display("index_sel is incorrect.  Expected: %h, Actual: %h", IDX,DUT.index_sel); fail(); $finish();
-        // end
-        // assert(DUT.read_word_sel == EVICT) begin
-        //     $display("read_word_sel is correct.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); pass();
-        // end else begin
-        //     $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", EVICT,DUT.read_word_sel); fail(); $finish();
-        // end
-        // assert(DUT.count_reset == y) begin
-        //     $display("count_reset is correct.  Expected: %h, Actual: %h", y,DUT.count_reset); pass();
-        // end else begin
-        //     $display("count_reset is incorrect.  Expected: %h, Actual: %h", y,DUT.count_reset); fail(); $finish();
-        // end
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, n,   n,   IDX, OFF, OFF,  dc, n,   n,   n,   n,   n,   MT, E0);
         
+        $display("");
+        $display("Now in Evict (E0), imem not ready to receive");
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   n,   n,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+
+        $display("");
+        $display("Now in Evict (E0), imem is ready to receive");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   y,   n,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,  y,   n,   n,   n,   n,   E0, E0);
+
+        $display("");
+        $display("Now in Evict (E0), imem is ready to respond");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   y,   y,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+
+        $display("");
+        $display("Now in Evict (E0), imem no longer ready to receive, but still respond");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   n,   y,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+
+        $display("");
+        $display("Both counters done -> transition to R0, imem not ready to receive");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   y,   y);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt      rd   mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd      wrd  act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel      sel                           fsh
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL,  dc,  r,   n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("Wait for imem to be ready for refill");
+        delay( $urandom_range(0, 127) );
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt      rd   mem  cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd      wrd  act  set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel      sel                           fsh
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL,  dc,  r,   n,   n,   y,   n,   n,   R0, R0);
+
+        $display("");
+        $display("Counts done for refill -> go to MD, sink ready to receive and source ready to respond");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   WRITE, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   y,   y,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                          fsh
+        test_outputs(y,   y,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF, dc, n,   y,   y,   n,   n,   MD, MT);
+        
+        delay( $urandom_range(0, 127) );
+
+        //--------------------------------------------------------------------
+        // Unit Testing #4 Flush
+        //--------------------------------------------------------------------
+        // Initalize all the signal inital values.
+
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 4: Flush from Idle (ID)");
+        $display("---------------------------------------");
+
+        reset = 1;
+        @(negedge clk);
+        reset = 0;
+
+        $display("");
+        $display("Wait in idle for flush signal");
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+
+        $display("");
+        $display("Flush signal goes high, so does memreq_val but flush should take precedence, imem not ready");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem not ready to receive, waiting in flush");
+        delay( $urandom_range(0, 127) );
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem ready to receive request, start evicting words");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem has responses, accept them even though doesn't matter since writing");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem req counter done, still wait for resp counter to be done");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem req and resp counters done, set line to clean, select next line to evict");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+
+        $display("");
+        $display("Counters have reset, new index should have been chosen in dpath, start evicting new line");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("Counters done for this line, set line to clean, all lines should be clean on the next clock cycle");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+
+        @(negedge clk);
+
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+
+        $display("");
+        $display("All flushed, transition back to idle");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+
+        delay( $urandom_range(0, 127) );
+
+        //--------------------------------------------------------------------
+        // Unit Testing #4 Flush
+        //--------------------------------------------------------------------
+        // Initalize all the signal inital values.
+
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 5: Flush from Idle (MT)");
+        $display("---------------------------------------");
+
+        reset = 1;
+        @(negedge clk);
+        reset = 0;
+
+        $display("");
+        $display("Go to MT");
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   n,   IDX, OFF, OFF,  dc, n,   n,   n,   n,   n,   MT, MT);
+
+        $display("");
+        $display("Flush signal goes high, so does memresp_rdy but flush should take precedence");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem not ready to receive, waiting in flush");
+        delay( $urandom_range(0, 127) );
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem ready to receive request, start evicting words");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem has responses, accept them even though doesn't matter since writing");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem req counter done, still wait for resp counter to be done");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("imem req and resp counters done, set line to clean, select next line to evict");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+
+        $display("");
+        $display("Counters have reset, new index should have been chosen in dpath, start evicting new line");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+
+        $display("");
+        $display("Counters done for this line, set line to clean, all lines should be clean on the next clock cycle");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+
+        @(negedge clk);
+
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
+        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+
+        $display("");
+        $display("All flushed, transition back to idle");
+        delay( $urandom_range(0, 127) );
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
+        set_inputs(n,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
+        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
+        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+
         delay( $urandom_range(0, 127) );
 
         $display();
-        $display("All tests passed!");
+        $display("BRO IS A FUCKING COMP ARCH GOD");
         $finish();
 
     end
@@ -1269,5 +796,270 @@ module top(  input logic clk, input logic linetrace );
           end
       end
     endtask
+
+    function void set_inputs
+    (
+        input logic t_memreq_val,
+        input logic [2:0] t_memreq_msg_type,
+        input logic [31:0] t_memreq_msg_addr,
+        input logic [31:0] t_memreq_msg_data,
+
+        input logic t_memresp_rdy,
+
+        input logic t_cache_req_rdy,
+
+        input logic t_cache_resp_val,
+        input logic [2:0] t_cache_resp_msg_type,
+        input logic [31:0] t_cache_resp_msg_data,
+
+        input logic t_flush,
+        input logic t_all_flushed,
+
+        input logic t_tarray_match,
+        input logic t_line_dirty,
+        input logic t_line_valid,
+
+        input logic t_refill_req_count_done,
+        input logic t_refill_resp_count_done,
+        input logic t_evict_req_count_done,
+        input logic t_evict_resp_count_done,
+    );
+    begin
+        assign memreq_val = t_memreq_val;
+        assign memreq_msg.type_ = t_memreq_msg_type;
+        assign memreq_msg.addr = t_memreq_msg_addr;
+        assign memreq_msg.data = t_memreq_msg_data;
+
+        assign memresp_rdy = t_memresp_rdy;
+
+        assign cache_req_rdy = t_cache_req_rdy;
+
+        assign cache_resp_val = t_cache_resp_val;
+        assign cache_resp_msg.type_ = t_cache_resp_msg_type;
+        assign cache_resp_msg.data = t_cache_resp_msg_data;
+
+        assign flush = t_flush;
+        assign all_flushed = t_all_flushed;
+
+        assign tarray_match = t_tarray_match;
+        assign line_dirty = t_line_dirty;
+        assign line_valid = t_line_valid;
+
+        assign refill_req_count_done = t_refill_req_count_done;
+        assign refill_resp_count_done = t_refill_resp_count_done;
+        assign evict_req_count_done = t_evict_req_count_done;
+        assign evict_resp_count_done = t_evict_resp_count_done;
+    end
+    endfunction
+
+    function void test_outputs
+    (
+        input logic t_memreq_rdy,
+
+        input logic t_memresp_val,
+
+        input logic t_cache_req_val,
+
+        input logic t_cache_resp_rdy,
+
+        input logic t_tarray_en,
+        input logic t_tarray_wen,
+
+        input logic t_refill_req_count_en,
+        input logic t_refill_resp_count_en,
+        input logic t_refill_count_reset,
+        input logic t_evict_req_count_en,
+        input logic t_evict_resp_count_en,
+        input logic t_evict_count_reset,
+
+        input logic t_write_data_sel,
+        input logic t_darray_en,
+        input logic t_darray_wen,
+        input logic t_index_sel,
+        input logic t_write_word_sel,
+        input logic t_read_word_sel,
+        input logic t_mem_action,
+
+        input logic t_clean_set,
+        input logic t_dirty_set,
+        input logic t_valid_set,
+
+        input logic t_flush_done,
+        input logic t_get_next_flush_line,
+
+        input logic [2:0] t_state,
+        input logic [2:0] t_nextState,
+    );
+    begin
+        assert(memreq_rdy == t_memreq_rdy) begin
+            $display("memreq_rdy is correct.  Expected: %h, Actual: %h", t_memreq_rdy,memreq_rdy); pass();
+        end else begin
+            $display("memreq_rdy is incorrect.  Expected: %h, Actual: %h", t_memreq_rdy,memreq_rdy); fail(); $finish();
+        end
+        
+        assert(memresp_val == t_memresp_val) begin
+            $display("memresp_val is correct.  Expected: %h, Actual: %h", t_memresp_val,memresp_val); pass();
+        end else begin
+            $display("memresp_val is incorrect.  Expected: %h, Actual: %h", t_memresp_val,memresp_val); fail(); $finish();
+        end
+
+        assert(cache_req_val == t_cache_req_val) begin
+            $display("cache_req_val is correct.  Expected: %h, Actual: %h", t_cache_req_val,cache_req_val); pass();
+        end else begin
+            $display("cache_req_val is incorrect.  Expected: %h, Actual: %h", t_cache_req_val,cache_req_val); fail(); $finish();
+        end
+
+        assert(cache_resp_rdy == t_cache_resp_rdy) begin
+            $display("cache_resp_rdy is correct.  Expected: %h, Actual: %h", t_cache_resp_rdy,cache_resp_rdy); pass();
+        end else begin
+            $display("cache_resp_rdy is incorrect.  Expected: %h, Actual: %h", t_cache_resp_rdy,cache_resp_rdy); fail(); $finish();
+        end
+
+        assert(tarray_en == t_tarray_en) begin
+            $display("tarray_en is correct.  Expected: %h, Actual: %h", t_tarray_en,tarray_en); pass();
+        end else begin
+            $display("tarray_en is incorrect.  Expected: %h, Actual: %h", t_tarray_en,tarray_en); fail(); $finish();
+        end
+
+        assert(tarray_en == t_tarray_en) begin
+            $display("tarray_en is correct.  Expected: %h, Actual: %h", t_tarray_en,tarray_en); pass();
+        end else begin
+            $display("tarray_en is incorrect.  Expected: %h, Actual: %h", t_tarray_en,tarray_en); fail(); $finish();
+        end
+
+        assert(tarray_wen == t_tarray_wen) begin
+            $display("tarray_en is correct.  Expected: %h, Actual: %h", t_tarray_wen,tarray_wen); pass();
+        end else begin
+            $display("tarray_en is incorrect.  Expected: %h, Actual: %h", t_tarray_wen,tarray_wen); fail(); $finish();
+        end
+
+        assert(refill_req_count_en == t_refill_req_count_en) begin
+            $display("refill_req_count_en is correct.  Expected: %h, Actual: %h", t_refill_req_count_en,refill_req_count_en); pass();
+        end else begin
+            $display("refill_req_count_en is incorrect.  Expected: %h, Actual: %h", t_refill_req_count_en,refill_req_count_en); fail(); $finish();
+        end
+
+        assert(refill_resp_count_en == t_refill_resp_count_en) begin
+            $display("refill_resp_count_en is correct.  Expected: %h, Actual: %h", t_refill_resp_count_en,refill_resp_count_en); pass();
+        end else begin
+            $display("refill_resp_count_en is incorrect.  Expected: %h, Actual: %h", t_refill_resp_count_en,refill_resp_count_en); fail(); $finish();
+        end
+
+        assert(refill_count_reset == t_refill_count_reset) begin
+            $display("refill_count_reset is correct.  Expected: %h, Actual: %h", t_refill_count_reset,refill_count_reset); pass();
+        end else begin
+            $display("refill_count_reset is incorrect.  Expected: %h, Actual: %h", t_refill_count_reset,refill_count_reset); fail(); $finish();
+        end
+
+        assert(evict_req_count_en == t_evict_req_count_en) begin
+            $display("evict_req_count_en is correct.  Expected: %h, Actual: %h", t_evict_req_count_en,evict_req_count_en); pass();
+        end else begin
+            $display("evict_req_count_en is incorrect.  Expected: %h, Actual: %h", t_evict_req_count_en,evict_req_count_en); fail(); $finish();
+        end
+
+        assert(evict_resp_count_en == t_evict_resp_count_en) begin
+            $display("evict_resp_count_en is correct.  Expected: %h, Actual: %h", t_evict_resp_count_en,evict_resp_count_en); pass();
+        end else begin
+            $display("evict_resp_count_en is incorrect.  Expected: %h, Actual: %h", t_evict_resp_count_en,evict_resp_count_en); fail(); $finish();
+        end
+
+        assert(evict_count_reset == t_evict_count_reset) begin
+            $display("evict_count_reset is correct.  Expected: %h, Actual: %h", t_evict_count_reset,evict_count_reset); pass();
+        end else begin
+            $display("evict_count_reset is incorrect.  Expected: %h, Actual: %h", t_evict_count_reset,evict_count_reset); fail(); $finish();
+        end
+
+        assert(write_data_sel == t_write_data_sel) begin
+            $display("write_data_sel is correct.  Expected: %h, Actual: %h", t_write_data_sel,write_data_sel); pass();
+        end else begin
+            $display("write_data_sel is incorrect.  Expected: %h, Actual: %h", t_write_data_sel,write_data_sel); fail(); $finish();
+        end
+
+        assert(darray_en == t_darray_en) begin
+            $display("darray_en is correct.  Expected: %h, Actual: %h", t_darray_en,darray_en); pass();
+        end else begin
+            $display("darray_en is incorrect.  Expected: %h, Actual: %h", t_darray_en,darray_en); fail(); $finish();
+        end
+
+        assert(darray_wen == t_darray_wen) begin
+            $display("darray_wen is correct.  Expected: %h, Actual: %h", t_darray_wen,darray_wen); pass();
+        end else begin
+            $display("darray_wen is incorrect.  Expected: %h, Actual: %h", t_darray_wen,darray_wen); fail(); $finish();
+        end
+
+        assert(index_sel == t_index_sel) begin
+            $display("index_sel is correct.  Expected: %h, Actual: %h", t_index_sel,index_sel); pass();
+        end else begin
+            $display("index_sel is incorrect.  Expected: %h, Actual: %h", t_index_sel,index_sel); fail(); $finish();
+        end
+
+        assert(write_word_sel == t_write_word_sel) begin
+            $display("write_word_sel is correct.  Expected: %h, Actual: %h", t_write_word_sel,write_word_sel); pass();
+        end else begin
+            $display("write_word_sel is incorrect.  Expected: %h, Actual: %h", t_write_word_sel,write_word_sel); fail(); $finish();
+        end
+
+        assert(read_word_sel == t_read_word_sel) begin
+            $display("read_word_sel is correct.  Expected: %h, Actual: %h", t_read_word_sel,read_word_sel); pass();
+        end else begin
+            $display("read_word_sel is incorrect.  Expected: %h, Actual: %h", t_read_word_sel,read_word_sel); fail(); $finish();
+        end
+
+        assert(mem_action == t_mem_action) begin
+            $display("mem_action is correct.  Expected: %h, Actual: %h", t_mem_action,mem_action); pass();
+        end else begin
+            $display("mem_action is incorrect.  Expected: %h, Actual: %h", t_mem_action,mem_action); fail(); $finish();
+        end
+
+        assert(mem_action == t_mem_action) begin
+            $display("mem_action is correct.  Expected: %h, Actual: %h", t_mem_action,mem_action); pass();
+        end else begin
+            $display("mem_action is incorrect.  Expected: %h, Actual: %h", t_mem_action,mem_action); fail(); $finish();
+        end
+
+        assert(clean_set == t_clean_set) begin
+            $display("clean_set is correct.  Expected: %h, Actual: %h", t_clean_set,clean_set); pass();
+        end else begin
+            $display("clean_set is incorrect.  Expected: %h, Actual: %h", t_clean_set,clean_set); fail(); $finish();
+        end
+
+        assert(dirty_set == t_dirty_set) begin
+            $display("dirty_set is correct.  Expected: %h, Actual: %h", t_dirty_set,dirty_set); pass();
+        end else begin
+            $display("dirty_set is incorrect.  Expected: %h, Actual: %h", t_dirty_set,dirty_set); fail(); $finish();
+        end
+
+        assert(valid_set == t_valid_set) begin
+            $display("valid_set is correct.  Expected: %h, Actual: %h", t_valid_set,valid_set); pass();
+        end else begin
+            $display("valid_set is incorrect.  Expected: %h, Actual: %h", t_valid_set,valid_set); fail(); $finish();
+        end
+
+        assert(flush_done == t_flush_done) begin
+            $display("flush_done is correct.  Expected: %h, Actual: %h", t_flush_done,flush_done); pass();
+        end else begin
+            $display("flush_done is incorrect.  Expected: %h, Actual: %h", t_flush_done,flush_done); fail(); $finish();
+        end
+
+        assert(get_next_flush_line == t_get_next_flush_line) begin
+            $display("get_next_flush_line is correct.  Expected: %h, Actual: %h", t_get_next_flush_line,get_next_flush_line); pass();
+        end else begin
+            $display("get_next_flush_line is incorrect.  Expected: %h, Actual: %h", t_get_next_flush_line,get_next_flush_line); fail(); $finish();
+        end
+
+        assert(DUT.state == t_state) begin
+            $display("state is correct.  Expected: %h, Actual: %h", t_state,DUT.state); pass();
+        end else begin
+            $display("state is incorrect.  Expected: %h, Actual: %h", t_state,DUT.state); fail(); $finish();
+        end
+
+        assert(DUT.nextState == t_nextState) begin
+            $display("nextState is correct.  Expected: %h, Actual: %h", t_nextState,DUT.nextState); pass();
+        end else begin
+            $display("nextState is incorrect.  Expected: %h, Actual: %h", t_nextState,DUT.nextState); fail(); $finish();
+        end
+        
+    end
+    endfunction
 
 endmodule

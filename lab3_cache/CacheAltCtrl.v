@@ -1,6 +1,6 @@
 `include "vc/mem-msgs.v"
 
-module lab3_cache_CacheBaseCtrl
+module lab3_cache_CacheAltCtrl
 (
     input  logic                    clk,
     input  logic                    reset,
@@ -31,16 +31,18 @@ module lab3_cache_CacheBaseCtrl
     output logic get_next_flush_line,
 
     // Status signals (dpath -> ctrl)
-    input logic tarray_match,
+    input logic tarray0_match,
+    input logic tarray1_match,
     input logic line_dirty,
-    input logic line_valid,
-    input logic incoming_mem_type,
+    input logic line0_valid,
+    input logic line1_valid,
 
     input logic refill_req_count_done,
     input logic refill_resp_count_done,
     input logic evict_req_count_done,
     input logic evict_resp_count_done,
 
+    input logic flush_way_sel,
 
     // Control signals (ctrl -> dpath)
     output logic input_en,
@@ -61,12 +63,12 @@ module lab3_cache_CacheBaseCtrl
     output logic write_word_sel,
     output logic read_word_sel,
     output logic mem_action,
+    output logic way_select,
 
     output logic clean_set,
     output logic dirty_set,
 
-    output logic valid_set,
-    output logic [2:0] state
+    output logic valid_set
 );
 
 // General logic
@@ -184,18 +186,28 @@ logic int_flush_done;
 logic int_not_flush_done;
 
 // State registers/logic
+logic [2:0] state;
 logic [2:0] nextState;
 
-// State register
+// LRU bit
+logic lru;
+logic set_way0;
+logic set_way1;
+
+// State + LRU registers
 always_ff @(posedge clk) begin
     if (reset) state <= ID;
     else state <= nextState;
+
+    if (set_way0) lru <= 1'b0;
+    else if (set_way1) lru <= 1'b1;
+    else lru <= 1'dx;
 end
 
 always_comb begin
     if (reset) nextState = ID;
-    assign req_write = (incoming_mem_type == w);
-    assign hit = tarray_match && line_valid;
+    assign req_write = (memreq_msg.type_ == WRITE);
+    assign hit = (tarray0_match && line0_valid) || (tarray1_match && line1_valid);
     assign hit_write = hit && req_write;
     assign refill_counts_done = refill_req_count_done && refill_resp_count_done;
     assign evict_counts_done = evict_req_count_done && evict_resp_count_done;
@@ -203,8 +215,8 @@ always_comb begin
     assign inc_refill_resp_not_done = cache_resp_val && !refill_resp_count_done;
     assign inc_evict_req_not_done = cache_req_rdy && !evict_req_count_done;
     assign inc_evict_resp_not_done = cache_resp_val && !evict_resp_count_done;
-    assign int_flush_done = evict_counts_done && all_flushed;
-    assign int_not_flush_done = evict_counts_done && !all_flushed;
+    assign int_flush_done = refill_counts_done && all_flushed;
+    assign int_not_flush_done = refill_counts_done && !all_flushed;
 
     case(state)
         ID: begin // Wait for request from source
@@ -212,6 +224,10 @@ always_comb begin
             if (flush) nextState = FL; // If no request made to cache and flush asserted -> go to flush (FL)
             else if (memreq_val) nextState = MT; // If request made to cache -> go to tag check (MT)
             else nextState = ID;
+
+            set_way0 = 1'b0;
+            set_way1 = 1'b0;
+            way_select = 1'dx;
 
             //  mem  mem   cache  cache  tarray  tarray  refill    refill    refill  evic      evict     evict  write  darray  darray  index  write  read  mem     clean  dirty  valid  flush  get_next_
             //  req  resp  req    resp   en      wen     req       resp      count   req       resp      count  data   en      wen     sel    word   word  action  set    set    set    done   flush_line
@@ -223,9 +239,26 @@ always_comb begin
             else if (hit) begin
                 if (memresp_rdy && !memreq_val) nextState = ID; // Hit, sink ready to receive value, and source not requesting value -> go back to idle (ID)
                 else nextState = MT; // Hit, sink ready to receive value and source requesting value or source not ready to receive -> stay in tag check (MT)
+
+                // Need to set LRU bit since transaction done - set other way to LRU since the one that hit was used most recently
+                if (tarray0_match) begin
+                    set_way0 = 1'b0;
+                    set_way1 = 1'b1;
+                    way_select = 1'b0;
+                end
+                else begin // guarenteed to be tarray1_match since hit already determined
+                    set_way0 = 1'b1;
+                    set_way1 = 1'b0;
+                    way_select = 1'b1;
+                end
+
             end else begin
                 if(line_dirty) nextState = E0; // If miss and line is dirty -> go to evict (E0)
                 else nextState = R0; // If miss and line is clean -> go to refill (R0)
+
+                set_way0 = 1'b0;
+                set_way1 = 1'b0;
+                way_select = lru;
             end
 
             //  mem                   mem   cache  cache  tarray  tarray  refill    refill    refill  evicy     evict     evict  write  darray  darray      index  write  read  mem     clean  dirty      valid  flush  get_next_
@@ -239,23 +272,30 @@ always_comb begin
             if (evict_counts_done) nextState = R0;
             else nextState = E0;
 
-            //  mem  mem   cache                                   cache  tarray  tarray  refill    refill    refill  evict                   evict                     evict              write  darray  darray      index  write  read   mem     clean  dirty  valid  flush  get_next_
-            //  req  resp  req                                     resp   en      wen     req       resp      count   req                     resp                      count              data   en      wen         sel    word   word   action  set    set    set    done   flush_line
-            //  rdy  val   val                                     rdy                    count_en  count_en  reset   count_en                count_en                  reset              sel                               sel    sel
-            tab(n,   n,    cache_req_rdy && !evict_req_count_done, y,     n,      n,      n,        n,        y,      inc_evict_req_not_done, inc_evict_resp_not_done,  evict_counts_done, dc,    y,      n,          IDX,   dc,    EVICT, w,      y,     n,     n,     n,     n, n);
+            set_way0 = 1'b0;
+            set_way1 = 1'b0;
+            way_select = lru;
+
+            //  mem  mem   cache          cache  tarray  tarray  refill    refill    refill  evict                   evict                     evict              write  darray  darray      index  write  read   mem     clean  dirty  valid  flush  get_next_
+            //  req  resp  req            resp   en      wen     req       resp      count   req                     resp                      count              data   en      wen         sel    word   word   action  set    set    set    done   flush_line
+            //  rdy  val   val            rdy                    count_en  count_en  reset   count_en                count_en                  reset              sel                               sel    sel
+            tab(n,   n,    cache_req_rdy, y,     n,      n,      n,        n,        y,      inc_evict_req_not_done, inc_evict_resp_not_done,  evict_counts_done, dc,    y,      n,          IDX,   dc,    EVICT, w,      y,     n,     n,     n,     n, n);
 
         end
         R0: begin // Refill data from memory on miss
 
             // Go to R0 if refill of line is done
-            if (evict_counts_done) nextState = MD;
+            if (refill_counts_done) nextState = MD;
             else nextState = R0;
 
-            //  mem  mem   cache                                   cache  tarray  tarray                                    refill    refill    refill  evict                   evict                     evict                write  darray  darray                                     index  write    read  mem     clean  dirty  valid  flush  get_next_
-            //  req  resp  req                                     resp   en      wen                                       req       resp      count   req                     resp                      count                data   en      wen                                        sel    word     word  action  set    set    set    done   flush_line
-            //  rdy  val   val                                     rdy                                                      count_en  count_en  reset   count_en                count_en                  reset                sel                                                              sel      sel
-            //tab(n,   n,    cache_req_rdy && !refill_req_count_done, y,     y,      cache_resp_val && !refill_resp_count_done, inc_refill_req_not_done, inc_refill_resp_not_done,  refill_counts_done, n,        n,        y,     IMEM,  y,      cache_resp_val && !refill_resp_count_done,  IDX,   REFILL,  dc,   r,      n,     n,     y,     n,     n, n);
-            tab(n,   n,    cache_req_rdy && !evict_req_count_done, y,     y,      cache_resp_val && !evict_resp_count_done, n,        n,        y,      inc_evict_req_not_done, inc_evict_resp_not_done,  evict_counts_done,   IMEM,  y,      cache_resp_val && !evict_resp_count_done,  IDX,   REFILL,  dc,   r,      n,     n,     y,     n,     n, n);
+            set_way0 = 1'b0;
+            set_way1 = 1'b0;
+            way_select = lru;
+
+            //  mem  mem   cache          cache  tarray  tarray          refill                   refill                     refill              evict     evict     evict  write  darray  darray           index  write    read  mem     clean  dirty  valid  flush  get_next_
+            //  req  resp  req            resp   en      wen             req                      resp                       count               req       resp      count  data   en      wen              sel    word     word  action  set    set    set    done   flush_line
+            //  rdy  val   val            rdy                            count_en                 count_en                   reset               count_en  count_en  reset  sel                                    sel      sel
+            tab(n,   n,    cache_req_rdy, y,     y,      cache_resp_val, inc_refill_req_not_done, inc_refill_resp_not_done,  refill_counts_done, n,        n,        y,     IMEM,  y,      cache_resp_val,  IDX,   REFILL,  dc,   r,      n,     n,     y,     n,     n, n);
             
         end
         MD: begin // Perform data access and respond to proc if read
@@ -264,6 +304,22 @@ always_comb begin
             if (memresp_rdy && !memreq_val) nextState = ID;
             else if (memresp_rdy && memreq_val) nextState = MT;
             else nextState = MD;
+
+            // Need to set LRU bit since transaction done - swap LRU bit since least recently used one that we evicted/refilled is now the most recently used one
+            if (memresp_rdy) begin
+                if (lru == 1'b0) begin
+                    set_way0 = 1'b0;
+                    set_way1 = 1'b1;
+                end else begin
+                    set_way0 = 1'b1;
+                    set_way1 = 1'b0;
+                end
+            end else begin
+                set_way0 = 1'b0;
+                set_way1 = 1'b0;
+            end
+
+            way_select = lru;
 
             //  mem            mem   cache  cache  tarray  tarray  refill    refill    refill  evict     evict     evict  write  darray  darray      index  write  read  mem     clean  dirty      valid  flush  get_next_
             //  req            resp  req    resp   en      wen     req       resp      count   req       resp      count  data   en      wen         sel    word   word  action  set    set        set    done   flush_line
@@ -277,17 +333,27 @@ always_comb begin
             if (all_flushed) nextState = ID;
             else nextState = FL;
 
+            set_way0 = 1'b0;
+            set_way1 = 1'b0;
+
+            way_select = flush_way_sel;
+
             // NOTE: only set line to clean AFTER line is flushed
 
-            //  mem  mem   cache          cache  tarray  tarray   refill    refill    refill  evict                    evict                     evict                  write  darray  darray  index  write    read    mem     clean               dirty  valid  flush        get_next_
-            //  req  resp  req            resp   en      wen      req       resp      count   req                      resp                      count                  data   en      wen     sel    word     word    action  set                 set    set    done         flush_line
-            //  rdy  val   val            rdy                     count_en  count_en  reset   count_en                 count_en                  reset                  sel                           sel      sel
-            tab(n,   n,    cache_req_rdy && !evict_req_count_done, y,     n,      n,       n,        n,        y,      inc_evict_req_not_done,  inc_evict_resp_not_done,  evict_counts_done,     dc,    y,      n,      FLUSH, dc,      EVICT,  w,      int_not_flush_done, n,     n,     all_flushed, int_not_flush_done, n);
-                
+            //  mem  mem   cache          cache  tarray  tarray   refill                   refill                     refill              evict     evict     evict  write  darray  darray  index  write    read    mem     clean               dirty  valid  flush        get_next_
+            //  req  resp  req            resp   en      wen      req                      resp                       count               req       resp      count  data   en      wen     sel    word     word    action  set                 set    set    done         flush_line
+            //  rdy  val   val            rdy                     count_en                 count_en                   reset               count_en  count_en  reset  sel                           sel      sel
+            tab(n,   n,    cache_req_rdy, y,     n,      n,       inc_refill_req_not_done, inc_refill_resp_not_done,  refill_counts_done, n,        n,        y,     dc,    y,      n,      FLUSH, dc,      EVICT,  w,      int_not_flush_done, n,     n,     all_flushed, int_not_flush_done, n);
+               
         end
         default: begin
             
             nextState = ID;
+
+            set_way0 = 1'b0;
+            set_way1 = 1'b0;
+
+            way_select = 1'dx;
 
             //  mem  mem   cache  cache  tarray  tarray  refill    refill    refill  evict     evict     evict  write  darray  darray  index  write  read  mem     clean  dirty  valid  flush  get_next_
             //  req  resp  req    resp   en      wen     req       resp      count   req       resp      count  data   en      wen     sel    word   word  action  set    set    set    done   flush_line
