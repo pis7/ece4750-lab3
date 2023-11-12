@@ -6,7 +6,7 @@
 `default_nettype none
 `timescale 1ps/1ps
 
-`include "CacheAltCtrl.v"
+`include "CacheBaseCtrl.v"
 `include "vc/trace.v"
 `include "vc/mem-msgs.v"
 
@@ -40,29 +40,25 @@ module top(  input logic clk, input logic linetrace );
     logic flush;
     logic all_flushed;
     logic flush_done;
-    logic get_next_flush_line;
 
     // Status signals (dpath -> ctrl)
     logic tarray_match;
     logic line_dirty;
     logic line_valid;
 
-    logic refill_req_count_done;
-    logic refill_resp_count_done;
-    logic evict_req_count_done;
-    logic evict_resp_count_done;
+    logic req_count_done;
+    logic resp_count_done;
+
+    logic incoming_mem_type;
 
     // Control signals (ctrl -> dpath)
     logic input_en;
     logic tarray_en;
     logic tarray_wen;
 
-    logic refill_req_count_en;
-    logic refill_resp_count_en;
-    logic refill_count_reset;
-    logic evict_req_count_en;
-    logic evict_resp_count_en;
-    logic evict_count_reset;
+    logic req_count_en;
+    logic resp_count_en;
+    logic count_reset;
 
     logic write_data_sel;
     logic darray_en;
@@ -76,8 +72,9 @@ module top(  input logic clk, input logic linetrace );
     logic dirty_set;
 
     logic valid_set;
+    logic [2:0] state;
 
-    lab3_cache_CacheAltCtrl DUT
+    lab3_cache_CacheBaseCtrl DUT
     (
         .*
     );
@@ -139,151 +136,152 @@ module top(  input logic clk, input logic linetrace );
         reset = 1;
         @(negedge clk);
         reset = 0;
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
         
         $display("");
         $display("Waiting for proc to send a val request");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat  en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                 sel  sel                             fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                 sel  sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   ID, ID,  y);
 
         delay( $urandom_range(0, 127) ); 
 
         $display("");
         $display("Still waiting for proc val request");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat  en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                 sel  sel                          fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                 sel  sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   ID, ID,  y);
 
         $display("");
         $display("Proc has a value now, cache not ready for it though");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
 
         $display("");
         $display("Transition to MT");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                          fsh
-        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, n,   n,   IDX, OFF, OFF, dc, n,   n,   n,   n,   n,   MT, R0);
-
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel  sel                        
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX, OFF, OFF, dc, n,   n,   n,   n,   MT, R0,  n);
 
         $display("");
         $display("Transition to R0");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
-        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL, OFF, dc, r,   n,   y,   n,   R0, R0,  n);
+
 
         delay( $urandom_range(0, 127) ); 
         
         $display("");
         $display("Wait for imem to be ready");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
-        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL, OFF, dc, r,   n,   y,   n,   R0, R0,  n);
 
         $display("");
         $display("imem now ready to respond");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
+
 
         $display("");
         $display("Still in R0, send req to imem");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                           fsh
-        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   IMEM,  y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
         delay( $urandom_range(0, 127) );
 
         $display("");
         $display("Wait for imem to have response");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
-        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   IMEM,  y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
         $display("");
         $display("imem has response");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
-        test_outputs(n,   n,   y,   y,   y,   y,   y,   y,   n,   n,   n,   y,   IMEM, y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   y,   y,   y,   y,   y,   y,   n,   IMEM,  y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
         $display("");
         $display("imem not ready but still has responses");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   y,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd     wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel     sel                          fsh
-        test_outputs(n,   n,   n,   y,   y,   y,   n,   y,   n,   n,   n,   y,   IMEM, y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   n,   y,   y,   y,   n,   y,   n,   IMEM,  y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
         $display("");
         $display("Counts are done, transition to MD, proc not ready to receive");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(n,   y,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   n,   IDX, OFF, OFF,  dc, n,   n,   y,   n,   n,   MD, MD);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   y,   n,   n,   n,   n,   n,   n,   y,   PROC,  y,   n,   IDX, OFF,    OFF, dc,  n,   n,   y,   n,   MD, MD,  n);
 
         $display("");
         $display("Proc ready to receive value");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   READ,  32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   r,     32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne       st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,  dc,     dc,  dc,  n,   n,   n,   n,   ID, ID,  y);
 
         delay( $urandom_range(0, 127) );
 
-        //--------------------------------------------------------------------
+        // --------------------------------------------------------------------
         // Unit Testing #2 Test Hit with Write
-        //--------------------------------------------------------------------
+        // --------------------------------------------------------------------
         // Initalize all the signal inital values.
         
         $display("");
@@ -297,60 +295,59 @@ module top(  input logic clk, input logic linetrace );
 
         $display("");
         $display("Source not requesting");
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   WRITE, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   w,     32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   n,   n);
         
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne       st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,  dc,     dc,  dc,  n,   n,   n,   n,   ID, ID,  y);
 
         $display("");
         $display("Hit with source requesting a write, sink not ready to receive");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n);
        
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF,  dc, n,   y,   n,   n,   n,   MT, MT);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   PROC,  y,   y,   IDX, OFF,    OFF,  dc,  n,   y,   n,   n,  MT,  MT,  n);
 
         $display("");
         $display("Still waiting for sink to be ready");
         delay( $urandom_range(0, 127) );
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF,  dc, n,   y,   n,   n,   n,   MT, MT);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   PROC,  y,   y,   IDX, OFF,    OFF,  dc,  n,   y,   n,   n,  MT,  MT,  n);
 
         $display("");
         $display("Sink now ready to receive value, source no longer requesting -> go to idle");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   DCMEM, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   dc,    32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n);
        
-
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,  dc,     dc,  dc,  n,   n,   n,   n,   ID,  ID,  y);
 
         delay( $urandom_range(0, 127) );
 
         //--------------------------------------------------------------------
-        // Unit Testing #3 Dirty Line - Eviction on ReadS
+        // Unit Testing #3 Dirty Line - Eviction on Reads
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
 
@@ -365,117 +362,123 @@ module top(  input logic clk, input logic linetrace );
 
         $display("");
         $display("Wait for source to send value");
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   w,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,  dc,     dc,  dc,  n,   n,   n,   n,   ID,  ID,  y);
 
         $display("");
         $display("Source has value and line is dirty -> go to MT");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   y,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   y,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, n,   n,   IDX, OFF, OFF,  dc, n,   n,   n,   n,   n,   MT, E0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel     sel                         
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX, OFF,    OFF, dc,  n,   n,   n,   n,   MT,  E0,  n);
         
         $display("");
         $display("Now in Evict (E0), imem not ready to receive");
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   n,   n,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt    rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd    wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel    sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   dc,    y,   n,   IDX, dc,    EVICT, w,   y,   n,   n,   n,   E0,  E0,  n);
 
         $display("");
         $display("Now in Evict (E0), imem is ready to receive");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   y,   n,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,  y,   n,   n,   n,   n,   E0, E0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt    rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd    wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel    sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   dc,    y,   n,   IDX, dc,    EVICT, w,   y,   n,   n,   n,   E0,  E0,  n);
 
         $display("");
         $display("Now in Evict (E0), imem is ready to respond");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   y,   y,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt    rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd    wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel    sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   dc,    y,   n,   IDX, dc,    EVICT, w,   y,   n,   n,   n,   E0,  E0,  n);
 
         $display("");
         $display("Now in Evict (E0), imem no longer ready to receive, but still respond");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   y,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd      mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd     act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                              fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   n,   y,   n,   dc,   y,   n,   IDX, dc,  EVICT,  w,   y,   n,   n,   n,   n,   E0, E0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt    rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd    wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel    sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   y,   n,   dc,    y,   n,   IDX, dc,    EVICT, w,   y,   n,   n,   n,   E0,  E0,  n);
 
         $display("");
         $display("Both counters done -> transition to R0, imem not ready to receive");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  n,   n,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n,   y,   y);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   y,   y);
+
+        @(posedge clk); // Reset counters back to 0
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt      rd   mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd      wrd  act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel      sel                           fsh
-        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL,  dc,  r,   n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel      sel                         
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL,  dc,    r,   n,   n,   y,   n,   R0,   R0,  n);
 
         $display("");
         $display("Wait for imem to be ready for refill");
         delay( $urandom_range(0, 127) );
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt      rd   mem  cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd      wrd  act  set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel      sel                           fsh
-        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   n,   n,   y,   IMEM, y,   n,   IDX, REFILL,  dc,  r,   n,   n,   y,   n,   n,   R0, R0);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel      sel                         
+        test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL,  dc,    r,   n,   n,   y,   n,   R0,   R0,  n);
 
         $display("");
         $display("Counts done for refill -> go to MD, sink ready to receive and source ready to respond");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   WRITE, 32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   y,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   w,     32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   y,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd  act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                          fsh
-        test_outputs(y,   y,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF, dc, n,   y,   y,   n,   n,   MD, MT);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel      sel                         
+        test_outputs(y,   y,   n,   n,   n,   n,   n,   n,   y,   PROC,  y,   y,   IDX, OFF,     OFF,   dc,   n,   y,   y,   n,   MD,   MT,  y);
         
         delay( $urandom_range(0, 127) );
 
@@ -495,140 +498,154 @@ module top(  input logic clk, input logic linetrace );
 
         $display("");
         $display("Wait in idle for flush signal");
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   WRITE, 32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   w,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                   sel      sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,  dc,      dc,    dc,   n,   n,   n,   n,   ID,   ID,  y);
 
         $display("");
         $display("Flush signal goes high, so does memreq_val but flush should take precedence, imem not ready");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,   FL,   FL,  n);
 
         $display("");
         $display("imem not ready to receive, waiting in flush");
         delay( $urandom_range(0, 127) );
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,   FL,   FL,  n);
 
         $display("");
         $display("imem ready to receive request, start evicting words");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,   FL,   FL,  n);
 
         $display("");
         $display("imem has responses, accept them even though doesn't matter since writing");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,   FL,   FL,  n);
 
         $display("");
         $display("imem req counter done, still wait for resp counter to be done");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   y,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,   FL,   FL,  n);
 
         $display("");
         $display("imem req and resp counters done, set line to clean, select next line to evict");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   y,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
         $display("Counters have reset, new index should have been chosen in dpath, start evicting new line");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   n,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
         $display("Counters done for this line, set line to clean, all lines should be clean on the next clock cycle");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
-
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   y,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
-        $display("All flushed, transition back to idle");
+        $display("All flushed, wait for memreq_val");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   y,    FL,   FL,  y);
 
+        $display("");
+        $display("memreq_val high, transition to MT");
+        delay( $urandom_range(0, 127) );
+        @(negedge clk);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  R0,  n);
+        
         delay( $urandom_range(0, 127) );
 
         //--------------------------------------------------------------------
@@ -647,144 +664,158 @@ module top(  input logic clk, input logic linetrace );
 
         $display("");
         $display("Go to MT");
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   n,   n,   y,   PROC, y,   n,   IDX, OFF, OFF,  dc, n,   n,   n,   n,   n,   MT, MT);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   PROC,  y,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  MT,  n);
 
         $display("");
         $display("Flush signal goes high, so does memresp_rdy but flush should take precedence");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  y,   n,   n,   DCMEM,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("imem not ready to receive, waiting in flush");
         delay( $urandom_range(0, 127) );
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("imem ready to receive request, start evicting words");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   n,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   n,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("imem has responses, accept them even though doesn't matter since writing");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("imem req counter done, still wait for resp counter to be done");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   y,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("imem req and resp counters done, set line to clean, select next line to evict");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   y,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("Counters have reset, new index should have been chosen in dpath, start evicting new line");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  n,   n,   n,   n,   n,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel     wrd     wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                      sel     sel                         
+        test_outputs(n,   n,   y,   y,   n,   n,   y,   y,   n,   dc,    y,   n,   FLUSH,  dc,     EVICT, w,   n,   n,   n,   n,    FL,  FL,  n);
 
         $display("");
         $display("Counters done for this line, set line to clean, all lines should be clean on the next clock cycle");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(y,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
-
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx     wrt  rd     mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel     wrd  wrd    act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                     sel  sel                            fsh
-        test_outputs(n,   n,   y,   y,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   y,   n,   FLUSH,  dc,  EVICT, w,  y,   n,   n,   n,   y,   FL, FL);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   y,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
-        $display("All flushed, transition back to idle");
+        $display("All flushed, wait for memreq_val");
         delay( $urandom_range(0, 127) );
-        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  ref  ref  evt  evt
-        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  req  res  req  res
-        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              dne  dne  dne  dne
-        set_inputs(n,   READ,  32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n,   n,   n);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  ref  ref  ref  evt  evt  evt  wrt   dar  dar  idx  wrt  rd    mem cln  dty  val  fsh  get  st  nxt
-        //           req  res  req  res  en   wen  req  res  cnt  req  res  cnt  dat   en   wen  sel  wrd  wrd   act set  set  set  dne  nxt       st
-        //           rdy  val  val  rdy            en   en   rst  en   en   rst  sel                  sel  sel                           fsh
-        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   n,   n,   y,   dc,   n,   n,   dc,  dc,  dc,   dc, n,   n,   n,   n,   n,   ID, ID);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   y,    FL,   FL,  y);
+
+        $display("");
+        $display("memreq_val high, transition to MT");
+        delay( $urandom_range(0, 127) );
+        @(negedge clk);
+        //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
+        //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
+        //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
+
+        @(negedge clk);
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
+        //           rdy  val  val  rdy                           sel                     sel      sel                         
+        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  R0,  n);
 
         delay( $urandom_range(0, 127) );
 
         $display();
-        $display("BRO IS A FUCKING COMP ARCH GOD");
+        $display("All tests passed!");
         $finish();
 
     end
@@ -800,7 +831,7 @@ module top(  input logic clk, input logic linetrace );
     function void set_inputs
     (
         input logic t_memreq_val,
-        input logic [2:0] t_memreq_msg_type,
+        input logic t_incoming_mem_type,
         input logic [31:0] t_memreq_msg_addr,
         input logic [31:0] t_memreq_msg_data,
 
@@ -819,14 +850,12 @@ module top(  input logic clk, input logic linetrace );
         input logic t_line_dirty,
         input logic t_line_valid,
 
-        input logic t_refill_req_count_done,
-        input logic t_refill_resp_count_done,
-        input logic t_evict_req_count_done,
-        input logic t_evict_resp_count_done,
+        input logic t_req_count_done,
+        input logic t_resp_count_done,
     );
     begin
         assign memreq_val = t_memreq_val;
-        assign memreq_msg.type_ = t_memreq_msg_type;
+        assign incoming_mem_type = t_incoming_mem_type;
         assign memreq_msg.addr = t_memreq_msg_addr;
         assign memreq_msg.data = t_memreq_msg_data;
 
@@ -845,10 +874,8 @@ module top(  input logic clk, input logic linetrace );
         assign line_dirty = t_line_dirty;
         assign line_valid = t_line_valid;
 
-        assign refill_req_count_done = t_refill_req_count_done;
-        assign refill_resp_count_done = t_refill_resp_count_done;
-        assign evict_req_count_done = t_evict_req_count_done;
-        assign evict_resp_count_done = t_evict_resp_count_done;
+        assign req_count_done = t_req_count_done;
+        assign resp_count_done = t_resp_count_done;
     end
     endfunction
 
@@ -865,12 +892,9 @@ module top(  input logic clk, input logic linetrace );
         input logic t_tarray_en,
         input logic t_tarray_wen,
 
-        input logic t_refill_req_count_en,
-        input logic t_refill_resp_count_en,
-        input logic t_refill_count_reset,
-        input logic t_evict_req_count_en,
-        input logic t_evict_resp_count_en,
-        input logic t_evict_count_reset,
+        input logic t_req_count_en,
+        input logic t_resp_count_en,
+        input logic t_count_reset,
 
         input logic t_write_data_sel,
         input logic t_darray_en,
@@ -885,10 +909,11 @@ module top(  input logic clk, input logic linetrace );
         input logic t_valid_set,
 
         input logic t_flush_done,
-        input logic t_get_next_flush_line,
 
         input logic [2:0] t_state,
         input logic [2:0] t_nextState,
+
+        input logic t_input_en
     );
     begin
         assert(memreq_rdy == t_memreq_rdy) begin
@@ -933,40 +958,22 @@ module top(  input logic clk, input logic linetrace );
             $display("tarray_en is incorrect.  Expected: %h, Actual: %h", t_tarray_wen,tarray_wen); fail(); $finish();
         end
 
-        assert(refill_req_count_en == t_refill_req_count_en) begin
-            $display("refill_req_count_en is correct.  Expected: %h, Actual: %h", t_refill_req_count_en,refill_req_count_en); pass();
+        assert(req_count_en == t_req_count_en) begin
+            $display("req_count_en is correct.  Expected: %h, Actual: %h", t_req_count_en,req_count_en); pass();
         end else begin
-            $display("refill_req_count_en is incorrect.  Expected: %h, Actual: %h", t_refill_req_count_en,refill_req_count_en); fail(); $finish();
+            $display("req_count_en is incorrect.  Expected: %h, Actual: %h", t_req_count_en,req_count_en); fail(); $finish();
         end
 
-        assert(refill_resp_count_en == t_refill_resp_count_en) begin
-            $display("refill_resp_count_en is correct.  Expected: %h, Actual: %h", t_refill_resp_count_en,refill_resp_count_en); pass();
+        assert(resp_count_en == t_resp_count_en) begin
+            $display("resp_count_en is correct.  Expected: %h, Actual: %h", t_resp_count_en,resp_count_en); pass();
         end else begin
-            $display("refill_resp_count_en is incorrect.  Expected: %h, Actual: %h", t_refill_resp_count_en,refill_resp_count_en); fail(); $finish();
+            $display("resp_count_en is incorrect.  Expected: %h, Actual: %h", t_resp_count_en,resp_count_en); fail(); $finish();
         end
 
-        assert(refill_count_reset == t_refill_count_reset) begin
-            $display("refill_count_reset is correct.  Expected: %h, Actual: %h", t_refill_count_reset,refill_count_reset); pass();
+        assert(count_reset == t_count_reset) begin
+            $display("count_reset is correct.  Expected: %h, Actual: %h", t_count_reset,count_reset); pass();
         end else begin
-            $display("refill_count_reset is incorrect.  Expected: %h, Actual: %h", t_refill_count_reset,refill_count_reset); fail(); $finish();
-        end
-
-        assert(evict_req_count_en == t_evict_req_count_en) begin
-            $display("evict_req_count_en is correct.  Expected: %h, Actual: %h", t_evict_req_count_en,evict_req_count_en); pass();
-        end else begin
-            $display("evict_req_count_en is incorrect.  Expected: %h, Actual: %h", t_evict_req_count_en,evict_req_count_en); fail(); $finish();
-        end
-
-        assert(evict_resp_count_en == t_evict_resp_count_en) begin
-            $display("evict_resp_count_en is correct.  Expected: %h, Actual: %h", t_evict_resp_count_en,evict_resp_count_en); pass();
-        end else begin
-            $display("evict_resp_count_en is incorrect.  Expected: %h, Actual: %h", t_evict_resp_count_en,evict_resp_count_en); fail(); $finish();
-        end
-
-        assert(evict_count_reset == t_evict_count_reset) begin
-            $display("evict_count_reset is correct.  Expected: %h, Actual: %h", t_evict_count_reset,evict_count_reset); pass();
-        end else begin
-            $display("evict_count_reset is incorrect.  Expected: %h, Actual: %h", t_evict_count_reset,evict_count_reset); fail(); $finish();
+            $display("count_reset is incorrect.  Expected: %h, Actual: %h", t_count_reset,count_reset); fail(); $finish();
         end
 
         assert(write_data_sel == t_write_data_sel) begin
@@ -1041,22 +1048,22 @@ module top(  input logic clk, input logic linetrace );
             $display("flush_done is incorrect.  Expected: %h, Actual: %h", t_flush_done,flush_done); fail(); $finish();
         end
 
-        assert(get_next_flush_line == t_get_next_flush_line) begin
-            $display("get_next_flush_line is correct.  Expected: %h, Actual: %h", t_get_next_flush_line,get_next_flush_line); pass();
+        assert(state == t_state) begin
+            $display("state is correct.  Expected: %h, Actual: %h", t_state,state); pass();
         end else begin
-            $display("get_next_flush_line is incorrect.  Expected: %h, Actual: %h", t_get_next_flush_line,get_next_flush_line); fail(); $finish();
-        end
-
-        assert(DUT.state == t_state) begin
-            $display("state is correct.  Expected: %h, Actual: %h", t_state,DUT.state); pass();
-        end else begin
-            $display("state is incorrect.  Expected: %h, Actual: %h", t_state,DUT.state); fail(); $finish();
+            $display("state is incorrect.  Expected: %h, Actual: %h", t_state,state); fail(); $finish();
         end
 
         assert(DUT.nextState == t_nextState) begin
             $display("nextState is correct.  Expected: %h, Actual: %h", t_nextState,DUT.nextState); pass();
         end else begin
             $display("nextState is incorrect.  Expected: %h, Actual: %h", t_nextState,DUT.nextState); fail(); $finish();
+        end
+
+        assert(input_en == t_input_en) begin
+            $display("input_en is correct.  Expected: %h, Actual: %h", t_input_en,input_en); pass();
+        end else begin
+            $display("input_en is incorrect.  Expected: %h, Actual: %h", t_input_en,input_en); fail(); $finish();
         end
         
     end

@@ -93,7 +93,7 @@ icache (
   .flush_done(flush_done1)
 );
 
-lab3_cache_CacheBase
+lab3_cache_CacheAlt
 dcache (
   .clk(clk),
   .reset(reset),  

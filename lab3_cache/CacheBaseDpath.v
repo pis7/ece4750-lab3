@@ -28,7 +28,6 @@ module lab3_cache_CacheBaseDpath
     input logic flush,
     output logic all_flushed,
     input logic flush_done,
-    input logic get_next_flush_line,
 
     // Status signals (dpath -> ctrl)
     output logic tarray_match,
@@ -36,22 +35,17 @@ module lab3_cache_CacheBaseDpath
     output logic line_valid,
     output logic incoming_mem_type,
 
-    output logic refill_req_count_done,
-    output logic refill_resp_count_done,
-    output logic evict_req_count_done,
-    output logic evict_resp_count_done,
+    output logic req_count_done,
+    output logic resp_count_done,
 
     // Control signals (ctrl -> dpath)
     input logic input_en,
     input logic tarray_en,
     input logic tarray_wen,
 
-    input logic refill_req_count_en,
-    input logic refill_resp_count_en,
-    input logic refill_count_reset,
-    input logic evict_req_count_en,
-    input logic evict_resp_count_en,
-    input logic evict_count_reset,
+    input logic req_count_en,
+    input logic resp_count_en,
+    input logic count_reset,
 
     input logic write_data_sel,
     input logic darray_en,
@@ -93,10 +87,8 @@ assign incoming_mem_type = incoming_msg[74];
 assign proc_write_data = incoming_msg[31:0];
 
 // Inputs from proceessor ------------------------------------------
-// assign address = memreq_msg.addr;
-// assign proc_write_data = memreq_msg.data;
 
-vc_EnResetReg#(77, 0) addr_reg
+vc_EnResetReg#(77, 0) mem_msg_reg
 (
     .clk(clk),
     .reset(reset),
@@ -108,12 +100,12 @@ vc_EnResetReg#(77, 0) addr_reg
 // Tag array ---------------------------------------
 logic [20:0] tag [31:0];
 
-logic [20:0] imem_req_tag;
-assign imem_req_tag = cache_req_msg.addr[31:11];
+logic [20:0] mem_req_tag;
+assign mem_req_tag = cache_req_msg.addr[31:11];
 
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
-    if (tarray_en && tarray_wen && cache_resp_val) tag[incoming_index] <= imem_req_tag;
+    if (tarray_en && tarray_wen && cache_resp_val) tag[incoming_index] <= mem_req_tag;
 end
 
 assign tarray_match = ((incoming_tag == tag[incoming_index]) && tarray_en);
@@ -146,7 +138,7 @@ vc_Mux2#(5) index_mux
 vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(evict_resp_word[3:0]),
+    .in1(resp_word[3:0]),
     .sel(write_word_sel),
     .out(write_word_offset)
 );
@@ -157,19 +149,19 @@ logic [3:0] read_word_offset;
 vc_Mux2#(4) read_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(evict_req_word[3:0]),
+    .in1(req_word[3:0]),
     .sel(read_word_sel),
     .out(read_word_offset)
 );
 
-logic [31:0] imem_resp_data;
-assign imem_resp_data = cache_resp_msg.data;
+logic [31:0] mem_resp_data;
+assign mem_resp_data = cache_resp_msg.data;
 
 // -- Select write data source
 vc_Mux2#(32) write_data_source_mux
 (
     .in0(proc_write_data),
-    .in1(imem_resp_data),
+    .in1(mem_resp_data),
     .sel(write_data_sel),
     .out(write_data)
 );
@@ -224,92 +216,48 @@ always_comb begin
     else cache_data_out = 'hx;
 end
 
-// Refill counters ---------------------------------------
+// Memory access counters ---------------------------------------
 
-logic [4:0] refill_req_inc_out;
-logic [4:0] refill_req_word;
+logic [4:0] req_inc_out;
+logic [4:0] req_word;
 
-vc_EnResetReg#(5, 0) refill_req_count_reg
+vc_EnResetReg#(5, 0) req_count_reg
 (
     .clk(clk),
-    .reset(refill_count_reset),
-    .en(refill_req_count_en),
-    .d(refill_req_inc_out),
-    .q(refill_req_word)
+    .reset(count_reset),
+    .en(req_count_en),
+    .d(req_inc_out),
+    .q(req_word)
 );
 
-assign refill_req_count_done = (refill_req_word == 5'd16);
+assign req_count_done = (req_word == 5'd16);
 
-vc_Incrementer#(5, 1) refill_req_incrementer
+vc_Incrementer#(5, 1) req_incrementer
 (
-  .in(refill_req_word),
-  .out(refill_req_inc_out)  
+  .in(req_word),
+  .out(req_inc_out)  
 );
 
 // ---
 
-logic [4:0] refill_resp_inc_out;
-logic [4:0] refill_resp_word;
+logic [4:0] resp_inc_out;
+logic [4:0] resp_word;
 
-vc_EnResetReg#(5, 0) refill_resp_count_reg
+vc_EnResetReg#(5, 0) resp_count_reg
 (
     .clk(clk),
-    .reset(refill_count_reset),
-    .en(refill_resp_count_en),
-    .d(refill_resp_inc_out),
-    .q(refill_resp_word)
+    .reset(count_reset),
+    .en(resp_count_en),
+    .d(resp_inc_out),
+    .q(resp_word)
 );
 
-assign refill_resp_count_done = (refill_resp_word == 5'd16);
+assign resp_count_done = (resp_word == 5'd16);
 
-vc_Incrementer#(5, 1) refill_resp_incrementer
+vc_Incrementer#(5, 1) resp_incrementer
 (
-  .in(refill_resp_word),
-  .out(refill_resp_inc_out)  
-);
-
-// Evict counters ---------------------------------------
-
-logic [4:0] evict_req_inc_out;
-logic [4:0] evict_req_word;
-
-vc_EnResetReg#(5, 0) evict_req_count_reg
-(
-    .clk(clk),
-    .reset(evict_count_reset),
-    .en(evict_req_count_en),
-    .d(evict_req_inc_out),
-    .q(evict_req_word)
-);
-
-assign evict_req_count_done = (evict_req_word == 5'd16);
-
-vc_Incrementer#(5, 1) evict_req_incrementer
-(
-  .in(evict_req_word),
-  .out(evict_req_inc_out)  
-);
-
-// ---
-
-logic [4:0] evict_resp_inc_out;
-logic [4:0] evict_resp_word;
-
-vc_EnResetReg#(5, 0) evict_resp_count_reg
-(
-    .clk(clk),
-    .reset(evict_count_reset),
-    .en(evict_resp_count_en),
-    .d(evict_resp_inc_out),
-    .q(evict_resp_word)
-);
-
-assign evict_resp_count_done = (evict_resp_word == 5'd16);
-
-vc_Incrementer#(5, 1) evict_resp_incrementer
-(
-  .in(evict_resp_word),
-  .out(evict_resp_inc_out)  
+  .in(resp_word),
+  .out(resp_inc_out)  
 );
 
 // Dirty array ---------------------------------------------------
@@ -337,20 +285,21 @@ assign line_valid = (valid[incoming_index] == 1'b1);
 
 // Memory messages ---------------------------------------
 
-logic [31:0] req_addr_imem;
+logic [31:0] req_addr_mem;
+
 always_comb begin
     if (!flush) begin
-        if (state == E0) assign req_addr_imem = {tag[incoming_index], incoming_index, evict_req_word[3:0], address[1:0]};
-        else assign req_addr_imem = {incoming_tag, incoming_index, evict_req_word[3:0], address[1:0]};
+        if (state == E0) assign req_addr_mem = {tag[incoming_index], incoming_index, req_word[3:0], address[1:0]};
+        else assign req_addr_mem = {incoming_tag, incoming_index, req_word[3:0], address[1:0]};
     end else begin
-        assign req_addr_imem = {tag[flush_index], flush_index, evict_req_word[3:0], 2'b00};
+        assign req_addr_mem = {tag[flush_index], flush_index, req_word[3:0], 2'b00};
     end
 end
 
 // imem msg
 assign cache_req_msg.type_ = {2'b00, mem_action};
 assign cache_req_msg.opaque = 8'b0;
-assign cache_req_msg.addr = req_addr_imem;
+assign cache_req_msg.addr = req_addr_mem;
 assign cache_req_msg.len = 2'd0;
 assign cache_req_msg.data = cache_data_out;
 

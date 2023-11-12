@@ -12,7 +12,7 @@
 csrr  x1, mngr2proc < 100
 csrr  x2, mngr2proc < 0x2000
 csrr  x3, mngr2proc < 0x2400
-csrr  x4, mngr2proc < 0x2800
+csrr  x4, mngr2proc < 0x2A00
 add   x5, x0, x1
 
 loop:
@@ -238,4 +238,4 @@ nop
 .word 992663534 
 .word 1358796011
 .word 1771024152
-.offset  0x2800
+.offset  0x2A00

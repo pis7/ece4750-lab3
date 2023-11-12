@@ -47,21 +47,16 @@ logic all_flushed;
 logic get_next_flush_line;
 logic incoming_mem_type;
 
-logic refill_req_count_done;
-logic refill_resp_count_done;
-logic evict_req_count_done;
-logic evict_resp_count_done;
+logic req_count_done;
+logic resp_count_done;
 
 // Control signals (ctrl -> dpath)
 logic tarray_en;
 logic tarray_wen;
 
-logic refill_req_count_en;
-logic refill_resp_count_en;
-logic refill_count_reset;
-logic evict_req_count_en;
-logic evict_resp_count_en;
-logic evict_count_reset;
+logic req_count_en;
+logic resp_count_en;
+logic count_reset;
 
 logic write_data_sel;
 logic darray_en;

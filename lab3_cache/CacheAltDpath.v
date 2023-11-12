@@ -28,7 +28,6 @@ module lab3_cache_CacheAltDpath
     input logic flush,
     output logic all_flushed,
     input logic flush_done,
-    input logic get_next_flush_line,
 
     // Status signals (dpath -> ctrl)
     output logic tarray0_match,
@@ -36,11 +35,10 @@ module lab3_cache_CacheAltDpath
     output logic line_dirty,
     output logic line0_valid,
     output logic line1_valid,
+    output logic incoming_mem_type,
 
-    output logic refill_req_count_done,
-    output logic refill_resp_count_done,
-    output logic evict_req_count_done,
-    output logic evict_resp_count_done,
+    output logic req_count_done,
+    output logic resp_count_done,
 
     output logic flush_way_sel,
 
@@ -49,12 +47,9 @@ module lab3_cache_CacheAltDpath
     input logic tarray_en,
     input logic tarray_wen,
 
-    input logic refill_req_count_en,
-    input logic refill_resp_count_en,
-    input logic refill_count_reset,
-    input logic evict_req_count_en,
-    input logic evict_resp_count_en,
-    input logic evict_count_reset,
+    input logic req_count_en,
+    input logic resp_count_en,
+    input logic count_reset,
 
     input logic write_data_sel,
     input logic darray_en,
@@ -68,56 +63,58 @@ module lab3_cache_CacheAltDpath
     input logic clean_set,
     input logic dirty_set,
 
-    input logic valid_set
+    input logic valid_set,
+    input logic [2:0] state
 );
+
+// FSM states
+localparam ID = 3'd0; // Idle
+localparam MT = 3'd1; // Check tag
+localparam E0 = 3'd2; // Evict data
+localparam R0 = 3'd3; // Refill data
+localparam MD = 3'd4; // Data access (R/W)
+localparam FL = 3'd5; // Flush
 
 logic [31:0] address;
 logic [31:0] proc_write_data;
 
 // Decode incoming address from processor ---------------------------------------
+logic [76:0] incoming_msg;
 logic [20:0] incoming_tag;
 logic [4:0] incoming_index;
 logic [3:0] incoming_word_offset;
 
+assign address = incoming_msg[65:34];
 assign incoming_tag = address[31:11];
 assign incoming_index = address[10:6];
 assign incoming_word_offset = address[5:2];
+assign incoming_mem_type = incoming_msg[74];
+assign proc_write_data = incoming_msg[31:0];
 
 // Inputs from proceessor ------------------------------------------
-// assign address = memreq_msg.addr;
-// assign proc_write_data = memreq_msg.data;
 
-vc_EnResetReg#(32, 0) addr_reg
+vc_EnResetReg#(77, 0) mem_msg_reg
 (
     .clk(clk),
     .reset(reset),
     .en(input_en),
-    .d(memreq_msg.addr),
-    .q(address)
-);
-
-vc_EnResetReg#(32, 0) data_reg
-(
-    .clk(clk),
-    .reset(reset),
-    .en(input_en),
-    .d(memreq_msg.data),
-    .q(proc_write_data)
+    .d(memreq_msg),
+    .q(incoming_msg)
 );
 
 // Tag arrays ---------------------------------------
 logic [20:0] tag0 [31:0];
 logic [20:0] tag1 [31:0];
 
-logic [20:0] imem_req_tag;
-assign imem_req_tag = cache_req_msg.addr[31:11];
+logic [20:0] mem_req_tag;
+assign mem_req_tag = cache_req_msg.addr[31:11];
 
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
     if (!way_select) begin
-        if (tarray_en && tarray_wen && cache_resp_val) tag0[incoming_index] <= imem_req_tag;
+        if (tarray_en && tarray_wen && cache_resp_val) tag0[incoming_index] <= mem_req_tag;
     end else begin
-        if (tarray_en && tarray_wen && cache_resp_val) tag1[incoming_index] <= imem_req_tag;
+        if (tarray_en && tarray_wen && cache_resp_val) tag1[incoming_index] <= mem_req_tag;
     end
 end
 
@@ -128,97 +125,61 @@ assign tarray1_match = ((incoming_tag == tag1[incoming_index]) && tarray_en);
 logic [31:0] data0 [31:0][15:0];
 logic [31:0] data1 [31:0][15:0];
 
-logic [4:0] d0_index;
-logic [4:0] d1_index;
-logic [3:0] write0_word_offset;
-logic [3:0] write1_word_offset;
-logic [31:0] write0_data;
-logic [31:0] write1_data;
+logic [4:0] d_index;
+logic [3:0] write_word_offset;
+logic [31:0] write_data;
 
 // -- Data array write logic
 always_ff @(posedge clk) begin
     if (!way_select) begin
-        if (darray_en && darray_wen) data0[d0_index][write0_word_offset] <= write0_data;
+        if (darray_en && darray_wen) data0[d_index][write_word_offset] <= write_data;
     end else begin
-        if (darray_en && darray_wen) data1[d1_index][write1_word_offset] <= write1_data;
+        if (darray_en && darray_wen) data1[d_index][write_word_offset] <= write_data;
     end
 end
 
 // -- Select index source
 logic [4:0] flush_index;
 
-vc_Mux2#(5) index0_mux
+vc_Mux2#(5) index_mux
 (
     .in0(incoming_index),
     .in1(flush_index),
     .sel(index_sel),
-    .out(d0_index)
-);
-
-vc_Mux2#(5) index1_mux
-(
-    .in0(incoming_index),
-    .in1(flush_index),
-    .sel(index_sel),
-    .out(d1_index)
+    .out(d_index)
 );
 
 // -- Select write word offset source
 
-vc_Mux2#(4) write0_data_word_mux
+vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(refill_resp_word),
+    .in1(resp_word[3:0]),
     .sel(write_word_sel),
-    .out(write0_word_offset)
+    .out(write_word_offset)
 );
 
-vc_Mux2#(4) write1_data_word_mux
-(
-    .in0(incoming_word_offset),
-    .in1(refill_resp_word),
-    .sel(write_word_sel),
-    .out(write1_word_offset)
-);
-
-logic [3:0] read0_word_offset;
-logic [3:0] read1_word_offset;
+logic [3:0] read_word_offset;
 
 // -- Select read word offset source
-vc_Mux2#(4) read0_data_word_mux
+vc_Mux2#(4) read_data_word_mux
 (
     .in0(incoming_word_offset),
-    .in1(evict_req_word),
+    .in1(req_word[3:0]),
     .sel(read_word_sel),
-    .out(read0_word_offset)
+    .out(read_word_offset)
 );
 
-vc_Mux2#(4) rea1_data_word_mux
-(
-    .in0(incoming_word_offset),
-    .in1(evict_req_word),
-    .sel(read_word_sel),
-    .out(read1_word_offset)
-);
-
-logic [31:0] imem_resp_data;
-assign imem_resp_data = cache_resp_msg.data;
+logic [31:0] mem_resp_data;
+assign mem_resp_data = cache_resp_msg.data;
 
 // -- Select write data source
-vc_Mux2#(32) write0_data_source_mux
+vc_Mux2#(32) write_data_source_mux
 (
     .in0(proc_write_data),
-    .in1(imem_resp_data),
+    .in1(mem_resp_data),
     .sel(write_data_sel),
-    .out(write0_data)
-);
-
-vc_Mux2#(32) write1_data_source_mux
-(
-    .in0(proc_write_data),
-    .in1(imem_resp_data),
-    .sel(write_data_sel),
-    .out(write1_data)
+    .out(write_data)
 );
 
 // -- Select word output from array
@@ -227,29 +188,29 @@ logic [31:0] word0_out_upper;
 
 vc_Mux8#(32) word0_out_lower_eight_mux
 (
-    .in0(data0[d0_index][0]),
-    .in1(data0[d0_index][1]),
-    .in2(data0[d0_index][2]),
-    .in3(data0[d0_index][3]),
-    .in4(data0[d0_index][4]),
-    .in5(data0[d0_index][5]),
-    .in6(data0[d0_index][6]),
-    .in7(data0[d0_index][7]),
-    .sel(read0_word_offset[2:0]),
+    .in0(data0[d_index][0]),
+    .in1(data0[d_index][1]),
+    .in2(data0[d_index][2]),
+    .in3(data0[d_index][3]),
+    .in4(data0[d_index][4]),
+    .in5(data0[d_index][5]),
+    .in6(data0[d_index][6]),
+    .in7(data0[d_index][7]),
+    .sel(read_word_offset[2:0]),
     .out(word0_out_lower)
 );
 
 vc_Mux8#(32) word0_out_upper_eight_mux
 (
-    .in0(data0[d0_index][8]),
-    .in1(data0[d0_index][9]),
-    .in2(data0[d0_index][10]),
-    .in3(data0[d0_index][11]),
-    .in4(data0[d0_index][12]),
-    .in5(data0[d0_index][13]),
-    .in6(data0[d0_index][14]),
-    .in7(data0[d0_index][15]),
-    .sel(read0_word_offset[2:0]),
+    .in0(data0[d_index][8]),
+    .in1(data0[d_index][9]),
+    .in2(data0[d_index][10]),
+    .in3(data0[d_index][11]),
+    .in4(data0[d_index][12]),
+    .in5(data0[d_index][13]),
+    .in6(data0[d_index][14]),
+    .in7(data0[d_index][15]),
+    .sel(read_word_offset[2:0]),
     .out(word0_out_upper)
 );
 
@@ -259,7 +220,7 @@ vc_Mux2#(32) word0_out_final_mux
 (
     .in0(word0_out_lower),
     .in1(word0_out_upper),
-    .sel(read0_word_offset[3]),
+    .sel(read_word_offset[3]),
     .out(data0_word_mux_out)
 );
 
@@ -268,29 +229,29 @@ logic [31:0] word1_out_upper;
 
 vc_Mux8#(32) word1_out_lower_eight_mux
 (
-    .in0(data1[d1_index][0]),
-    .in1(data1[d1_index][1]),
-    .in2(data1[d1_index][2]),
-    .in3(data1[d1_index][3]),
-    .in4(data1[d1_index][4]),
-    .in5(data1[d1_index][5]),
-    .in6(data1[d1_index][6]),
-    .in7(data1[d1_index][7]),
-    .sel(read1_word_offset[2:0]),
+    .in0(data1[d_index][0]),
+    .in1(data1[d_index][1]),
+    .in2(data1[d_index][2]),
+    .in3(data1[d_index][3]),
+    .in4(data1[d_index][4]),
+    .in5(data1[d_index][5]),
+    .in6(data1[d_index][6]),
+    .in7(data1[d_index][7]),
+    .sel(read_word_offset[2:0]),
     .out(word1_out_lower)
 );
 
 vc_Mux8#(32) word1_out_upper_eight_mux
 (
-    .in0(data1[d1_index][8]),
-    .in1(data1[d1_index][9]),
-    .in2(data1[d1_index][10]),
-    .in3(data1[d1_index][11]),
-    .in4(data1[d1_index][12]),
-    .in5(data1[d1_index][13]),
-    .in6(data1[d1_index][14]),
-    .in7(data1[d1_index][15]),
-    .sel(read1_word_offset[2:0]),
+    .in0(data1[d_index][8]),
+    .in1(data1[d_index][9]),
+    .in2(data1[d_index][10]),
+    .in3(data1[d_index][11]),
+    .in4(data1[d_index][12]),
+    .in5(data1[d_index][13]),
+    .in6(data1[d_index][14]),
+    .in7(data1[d_index][15]),
+    .sel(read_word_offset[2:0]),
     .out(word1_out_upper)
 );
 
@@ -300,7 +261,7 @@ vc_Mux2#(32) word_out_final_mux
 (
     .in0(word1_out_lower),
     .in1(word1_out_upper),
-    .sel(read1_word_offset[3]),
+    .sel(read_word_offset[3]),
     .out(data1_word_mux_out)
 );
 
@@ -314,7 +275,6 @@ vc_Mux2#(32) way_out_select
     .out(way_data_out)
 );
 
-
 // -- darray_en gated data array output
 logic [31:0] cache_data_out;
 
@@ -323,92 +283,48 @@ always_comb begin
     else cache_data_out = 'hx;
 end
 
-// Refill counters ---------------------------------------
+// Memory access counters ---------------------------------------
 
-logic [3:0] refill_req_inc_out;
-logic [3:0] refill_req_word;
+logic [4:0] req_inc_out;
+logic [4:0] req_word;
 
-vc_EnResetReg#(4, 0) refill_req_count_reg
+vc_EnResetReg#(5, 0) req_count_reg
 (
     .clk(clk),
-    .reset(refill_count_reset),
-    .en(refill_req_count_en),
-    .d(refill_req_inc_out),
-    .q(refill_req_word)
+    .reset(count_reset),
+    .en(req_count_en),
+    .d(req_inc_out),
+    .q(req_word)
 );
 
-assign refill_req_count_done = (refill_req_word == 4'd15);
+assign req_count_done = (req_word == 5'd16);
 
-vc_Incrementer#(4, 1) refill_req_incrementer
+vc_Incrementer#(5, 1) req_incrementer
 (
-  .in(refill_req_word),
-  .out(refill_req_inc_out)  
+  .in(req_word),
+  .out(req_inc_out)  
 );
 
 // ---
 
-logic [3:0] refill_resp_inc_out;
-logic [3:0] refill_resp_word;
+logic [4:0] resp_inc_out;
+logic [4:0] resp_word;
 
-vc_EnResetReg#(4, 0) refill_resp_count_reg
+vc_EnResetReg#(5, 0) resp_count_reg
 (
     .clk(clk),
-    .reset(refill_count_reset),
-    .en(refill_resp_count_en),
-    .d(refill_resp_inc_out),
-    .q(refill_resp_word)
+    .reset(count_reset),
+    .en(resp_count_en),
+    .d(resp_inc_out),
+    .q(resp_word)
 );
 
-assign refill_resp_count_done = (refill_resp_word == 4'd15);
+assign resp_count_done = (resp_word == 5'd16);
 
-vc_Incrementer#(4, 1) refill_resp_incrementer
+vc_Incrementer#(5, 1) resp_incrementer
 (
-  .in(refill_resp_word),
-  .out(refill_resp_inc_out)  
-);
-
-// Evict counters ---------------------------------------
-
-logic [3:0] evict_req_inc_out;
-logic [3:0] evict_req_word;
-
-vc_EnResetReg#(4, 0) evict_req_count_reg
-(
-    .clk(clk),
-    .reset(evict_count_reset),
-    .en(evict_req_count_en),
-    .d(evict_req_inc_out),
-    .q(evict_req_word)
-);
-
-assign evict_req_count_done = (evict_req_word == 4'd15);
-
-vc_Incrementer#(4, 1) evict_req_incrementer
-(
-  .in(evict_req_word),
-  .out(evict_req_inc_out)  
-);
-
-// ---
-
-logic [3:0] evict_resp_inc_out;
-logic [3:0] evict_resp_word;
-
-vc_EnResetReg#(4, 0) evict_resp_count_reg
-(
-    .clk(clk),
-    .reset(evict_count_reset),
-    .en(evict_resp_count_en),
-    .d(evict_resp_inc_out),
-    .q(evict_resp_word)
-);
-
-assign evict_resp_count_done = (evict_resp_word == 4'd15);
-
-vc_Incrementer#(4, 1) evict_resp_incrementer
-(
-  .in(evict_resp_word),
-  .out(evict_resp_inc_out)  
+  .in(resp_word),
+  .out(resp_inc_out)  
 );
 
 // Dirty arrays ---------------------------------------------------
@@ -419,12 +335,12 @@ logic [31:0] dirty1;
 always_ff @(posedge clk) begin
     if (!way_select) begin
         if (reset) dirty0[31:0] <= 32'd0;
-        else if (clean_set) dirty0[d0_index] <= 1'b0;
-        else if (dirty_set) dirty0[d0_index] <= 1'b1;
+        else if (clean_set) dirty0[d_index] <= 1'b0;
+        else if (dirty_set) dirty0[d_index] <= 1'b1;
     end else begin
         if (reset) dirty1[31:0] <= 32'd0;
-        else if (clean_set) dirty1[d1_index] <= 1'b0;
-        else if (dirty_set) dirty1[d1_index] <= 1'b1;
+        else if (clean_set) dirty1[d_index] <= 1'b0;
+        else if (dirty_set) dirty1[d_index] <= 1'b1;
     end
 end
 
@@ -458,18 +374,27 @@ always_ff @(posedge clk) begin
 end
 
 assign line0_valid = (valid0[incoming_index] == 1'b1);
-
 assign line1_valid = (valid1[incoming_index] == 1'b1);
 
 // Memory messages ---------------------------------------
 
-logic [31:0] req_addr_imem;
-assign req_addr_imem = {incoming_tag, incoming_index, refill_req_word, memreq_msg.data[1:0]};
+logic [31:0] req_addr_mem;
+
+always_comb begin
+    if (!flush) begin
+        if (state == E0 && !way_select) assign req_addr_mem = {tag0[incoming_index], incoming_index, req_word[3:0], address[1:0]};
+        else if (state == E0 && way_select) assign req_addr_mem = {tag1[incoming_index], incoming_index, req_word[3:0], address[1:0]};
+        else assign req_addr_mem = {incoming_tag, incoming_index, req_word[3:0], address[1:0]};
+    end else begin
+        if (!way_select) assign req_addr_mem = {tag0[flush_index], flush_index, req_word[3:0], 2'b00};
+        else assign req_addr_mem = {tag1[flush_index], flush_index, req_word[3:0], 2'b00};
+    end
+end
 
 // imem msg
 assign cache_req_msg.type_ = {2'b00, mem_action};
 assign cache_req_msg.opaque = 8'b0;
-assign cache_req_msg.addr = req_addr_imem;
+assign cache_req_msg.addr = req_addr_mem;
 assign cache_req_msg.len = 2'd0;
 assign cache_req_msg.data = cache_data_out;
 
@@ -487,9 +412,9 @@ assign all0_flushed = (dirty0 == 32'd0);
 logic all1_flushed;
 assign all1_flushed = (dirty1 == 32'd0);
 
-assign all_flushed = all0_flushed & all1_flushed;
+assign all_flushed = all0_flushed && all1_flushed;
 
-assign flush_way_sel = !all0_flushed;
+assign flush_way_sel = all0_flushed;
 
 logic [4:0] flush0_index;
 logic [4:0] flush1_index;
