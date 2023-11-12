@@ -312,7 +312,7 @@ always_comb begin
 
             // If still more lines to flush after count done, reset counter and get next line to flush
             // If no more lines to flush after count done, reset counter and go back to MT
-            if (all_flushed && memreq_val) nextState = MT;
+            if (all_flushed && !flush) nextState = ID;
             else nextState = FL;
 
             set_way0 = 1'b0;

@@ -581,7 +581,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -595,7 +595,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -609,7 +609,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -618,12 +618,12 @@ module top(  input logic clk, input logic linetrace );
         test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   y,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
-        $display("All flushed, wait for memreq_val");
+        $display("All flushed, wait for flush deassertion");
         delay( $urandom_range(0, 127) );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n);
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   y,   y,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -632,19 +632,19 @@ module top(  input logic clk, input logic linetrace );
         test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   y,    FL,   FL,  y);
 
         $display("");
-        $display("memreq_val high, transition to MT");
+        $display("Flush deasserted, transition to ID");
         delay( $urandom_range(0, 127) );
         @(negedge clk);
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
         //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
         //           rdy  val  val  rdy                           sel                     sel      sel                         
-        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  R0,  n);
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   n,    ID, ID,  y);
         
         delay( $urandom_range(0, 127) );
 
@@ -747,7 +747,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -761,7 +761,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   n,   n);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx     wrt     rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -775,7 +775,7 @@ module top(  input logic clk, input logic linetrace );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   n,   y,   n,   y,   y,   y);
+        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   n,   y,   n,   y,   y,   y);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -784,12 +784,12 @@ module top(  input logic clk, input logic linetrace );
         test_outputs(n,   n,   n,   y,   n,   n,   n,   n,   y,   dc,    y,   n,   FLUSH, dc,      EVICT, w,   y,   n,   n,   n,    FL,   FL,  n);
 
         $display("");
-        $display("All flushed, wait for memreq_val");
+        $display("All flushed, wait for flush deassertion");
         delay( $urandom_range(0, 127) );
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   y,   n,   y,   n,   n);
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  y,   y,   y,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
@@ -798,19 +798,19 @@ module top(  input logic clk, input logic linetrace );
         test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   y,    FL,   FL,  y);
 
         $display("");
-        $display("memreq_val high, transition to MT");
+        $display("Flush deasserted, transition to ID");
         delay( $urandom_range(0, 127) );
         @(negedge clk);
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
-        set_inputs(y,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
+        set_inputs(n,   r,     32'dx,  32'dx,  n,   y,   y,   WRITE,  32'dx,  n,   y,   n,   n,   y,   n,   n);
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
         //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
         //           rdy  val  val  rdy                           sel                     sel      sel                         
-        test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  R0,  n);
+        test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,    n,   n,   dc,    dc,      dc,    dc,  n,   n,   n,   n,    ID, ID,  y);
 
         delay( $urandom_range(0, 127) );
 

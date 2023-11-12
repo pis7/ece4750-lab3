@@ -248,7 +248,7 @@ always_comb begin
 
             // If still more lines to flush after count done, reset counter and get next line to flush
             // If no more lines to flush after count done, reset counter and go back to MT
-            if (all_flushed && memreq_val) nextState = MT;
+            if (all_flushed && !flush) nextState = ID;
             else nextState = FL;
 
             // NOTE: only set line to clean AFTER line is flushed
@@ -258,7 +258,7 @@ always_comb begin
                 //  req  resp  req                               resp   en      wen     count_en           count_en            reset         data   en      wen     sel    word   word    action  set                  set    set    done         en
                 //  rdy  val   val                               rdy                                                                         sel                           sel    sel
                 tab(n,   n,    cache_req_rdy && !req_count_done, y,     n,      n,      inc_req_not_done,  inc_resp_not_done,  counts_done,  dc,    y,      n,      FLUSH, dc,    EVICT,  w,      int_not_flush_done,  n,     n,     all_flushed, n);      
-            end else begin // Wait with flush_done high until request received
+            end else begin // Wait with flush_done high until flush deasserted
                 //  mem  mem   cache  cache  tarray  tarray  req       resp      count   write  darray  darray  index  write  read  mem     clean  dirty  valid  flush  input
                 //  req  resp  req    resp   en      wen     count_en  count_en  reset   data   en      wen     sel    word   word  action  set    set    set    done   en
                 //  rdy  val   val    rdy                                                sel                           sel    sel
