@@ -107,7 +107,73 @@ assign mem_req_tag = cache_req_msg.addr[31:11];
 
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
-    if (!way_select) begin
+    if(reset) begin
+        tag0[0] <= 21'd0;
+        tag0[1] <= 21'd0;
+        tag0[2] <= 21'd0;
+        tag0[3] <= 21'd0;
+        tag0[4] <= 21'd0;
+        tag0[5] <= 21'd0;
+        tag0[6] <= 21'd0;
+        tag0[7] <= 21'd0;
+        tag0[8] <= 21'd0;
+        tag0[9] <= 21'd0;
+        tag0[10] <= 21'd0;
+        tag0[11] <= 21'd0;
+        tag0[12] <= 21'd0;
+        tag0[13] <= 21'd0;
+        tag0[14] <= 21'd0;
+        tag0[15] <= 21'd0;
+        tag0[16] <= 21'd0;
+        tag0[17] <= 21'd0;
+        tag0[18] <= 21'd0;
+        tag0[19] <= 21'd0;
+        tag0[20] <= 21'd0;
+        tag0[21] <= 21'd0;
+        tag0[22] <= 21'd0;
+        tag0[23] <= 21'd0;
+        tag0[24] <= 21'd0;
+        tag0[25] <= 21'd0;
+        tag0[26] <= 21'd0;
+        tag0[27] <= 21'd0;
+        tag0[28] <= 21'd0;
+        tag0[29] <= 21'd0;
+        tag0[30] <= 21'd0;
+        tag0[31] <= 21'd0;
+        tag1[0] <= 21'd0;
+        tag1[1] <= 21'd0;
+        tag1[2] <= 21'd0;
+        tag1[3] <= 21'd0;
+        tag1[4] <= 21'd0;
+        tag1[5] <= 21'd0;
+        tag1[6] <= 21'd0;
+        tag1[7] <= 21'd0;
+        tag1[8] <= 21'd0;
+        tag1[9] <= 21'd0;
+        tag1[10] <= 21'd0;
+        tag1[11] <= 21'd0;
+        tag1[12] <= 21'd0;
+        tag1[13] <= 21'd0;
+        tag1[14] <= 21'd0;
+        tag1[15] <= 21'd0;
+        tag1[16] <= 21'd0;
+        tag1[17] <= 21'd0;
+        tag1[18] <= 21'd0;
+        tag1[19] <= 21'd0;
+        tag1[20] <= 21'd0;
+        tag1[21] <= 21'd0;
+        tag1[22] <= 21'd0;
+        tag1[23] <= 21'd0;
+        tag1[24] <= 21'd0;
+        tag1[25] <= 21'd0;
+        tag1[26] <= 21'd0;
+        tag1[27] <= 21'd0;
+        tag1[28] <= 21'd0;
+        tag1[29] <= 21'd0;
+        tag1[30] <= 21'd0;
+        tag1[31] <= 21'd0;
+    end
+    else if (!way_select) begin
         if (tarray_en && tarray_wen) tag0[incoming_index] <= mem_req_tag;
     end else begin
         if (tarray_en && tarray_wen) tag1[incoming_index] <= mem_req_tag;
