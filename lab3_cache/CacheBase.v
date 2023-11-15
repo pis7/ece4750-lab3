@@ -6,7 +6,6 @@
 `define LAB3_CACHE_CACHE_BASE_V
 
 `include "vc/mem-msgs.v"
-`include "vc/regs.v"
 `include "CacheBaseDpath.v"
 `include "CacheBaseCtrl.v"
 

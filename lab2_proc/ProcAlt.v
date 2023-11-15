@@ -9,14 +9,16 @@
 `include "vc/queues.v"
 `include "vc/trace.v"
 
+//''' LAB TASK '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+// Include components here
+//''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''\/
+
 `include "tinyrv2_encoding.v"
 `include "ProcAltCtrl.v"
 `include "ProcAltDpath.v"
 `include "DropUnit.v"
 
-//''' LAB TASK '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-// Include components here
-//''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+//''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''/\
 
 module lab2_proc_ProcAlt
 #(
@@ -137,11 +139,11 @@ module lab2_proc_ProcAlt
   logic        dmem_reqstream_enq_val;
   logic        dmem_reqstream_enq_rdy;
 
+  logic [2:0 ] dmem_reqstream_enq_msg_type;
   logic [31:0] dmem_reqstream_enq_msg_addr;
   logic [31:0] dmem_reqstream_enq_msg_data;
-  logic        mem_action_M_enq;
 
-  assign dmem_reqstream_enq_msg.type_  = {2'd0, mem_action_M_enq};
+  assign dmem_reqstream_enq_msg.type_  = dmem_reqstream_enq_msg_type;
   assign dmem_reqstream_enq_msg.opaque = 8'b0;
   assign dmem_reqstream_enq_msg.addr   = dmem_reqstream_enq_msg_addr;
   assign dmem_reqstream_enq_msg.len    = 2'd0;
@@ -186,6 +188,10 @@ module lab2_proc_ProcAlt
     .deq_rdy (proc2mngr_rdy)
   );
 
+  //''' LAB TASK '''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+  // Instantiate and connect components here
+  //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''\/
+
   //----------------------------------------------------------------------
   // Control/Status Signals
   //----------------------------------------------------------------------
@@ -196,24 +202,21 @@ module lab2_proc_ProcAlt
   logic [1:0]  pc_sel_F;
 
   logic        reg_en_D;
+  logic [1:0]  op1_byp_sel_D;
+  logic [1:0]  op2_byp_sel_D;
   logic        op1_sel_D;
   logic [1:0]  op2_sel_D;
   logic [1:0]  csrr_sel_D;
   logic [2:0]  imm_type_D;
-  logic        imul_req_val_D;
-  logic        imul_req_rdy_D;
-  logic [1:0]  op1_byp_sel_D;
-  logic [1:0]  op2_byp_sel_D;
+  logic        imul_istream_val_D;
 
   logic        reg_en_X;
   logic [3:0]  alu_fn_X;
-  logic        imul_resp_rdy_X;
-  logic        imul_resp_val_X;
   logic [1:0]  ex_result_sel_X;
+  logic        imul_ostream_rdy_X;
 
   logic        reg_en_M;
   logic        wb_result_sel_M;
-  logic        mem_action_M;
 
   logic        reg_en_W;
   logic [4:0]  rf_waddr_W;
@@ -223,7 +226,9 @@ module lab2_proc_ProcAlt
   // status signals (dpath->ctrl)
 
   logic [31:0] inst_D;
+  logic        imul_istream_rdy_D;
 
+  logic        imul_ostream_val_X;
   logic        br_cond_eq_X;
   logic        br_cond_lt_X;
   logic        br_cond_ltu_X;
@@ -243,11 +248,11 @@ module lab2_proc_ProcAlt
 
     // Data Memory Port
 
+    .dmem_reqstream_msg_type  (dmem_reqstream_enq_msg_type),
     .dmem_reqstream_val       (dmem_reqstream_enq_val),
     .dmem_reqstream_rdy       (dmem_reqstream_enq_rdy),
     .dmem_respstream_val      (dmem_respstream_val),
     .dmem_respstream_rdy      (dmem_respstream_rdy),
-    .mem_action_M               (mem_action_M_enq),
 
     // mngr communication ports
 
@@ -267,7 +272,7 @@ module lab2_proc_ProcAlt
 
   lab2_proc_ProcAltDpath
   #(
-    .p_num_cores              (p_num_cores)
+    .p_num_cores             (p_num_cores)
   )
   dpath
   (
@@ -292,6 +297,8 @@ module lab2_proc_ProcAlt
     .*
   );
 
+  //'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''/\
+
   //----------------------------------------------------------------------
   // Line tracing
   //----------------------------------------------------------------------
@@ -299,9 +306,10 @@ module lab2_proc_ProcAlt
   `ifndef SYNTHESIS
 
   lab2_proc_tinyrv2_encoding_InstTasks tinyrv2();
-  logic [`VC_TRACE_NBITS-1:0] str;
 
+  logic [`VC_TRACE_NBITS-1:0] str;
   logic [`VC_TRACE_NBITS-1:0] temp;
+
   `VC_TRACE_BEGIN
   begin
 
@@ -312,7 +320,7 @@ module lab2_proc_ProcAlt
     if ( !ctrl.val_F )
       vc_trace.append_chars( trace_str, " ", 8 );
     else if ( ctrl.squash_F ) begin
-      vc_trace.append_str( trace_str, "~" );
+      vc_trace.append_str( trace_str, "/" );
       vc_trace.append_chars( trace_str, " ", 8-1 );
     end else if ( ctrl.stall_F ) begin
       vc_trace.append_str( trace_str, "#" );
@@ -327,7 +335,7 @@ module lab2_proc_ProcAlt
     if ( !ctrl.val_D )
       vc_trace.append_chars( trace_str, " ", 23 );
     else if ( ctrl.squash_D ) begin
-      vc_trace.append_str( trace_str, "~" );
+      vc_trace.append_str( trace_str, "/" );
       vc_trace.append_chars( trace_str, " ", 23-1 );
     end else if ( ctrl.stall_D ) begin
       vc_trace.append_str( trace_str, "#" );
@@ -369,9 +377,11 @@ module lab2_proc_ProcAlt
     $sformat(temp,"%x",proc2mngr_enq_msg);
     vc_trace.append_val_rdy_str( trace_str, proc2mngr_enq_val, proc2mngr_enq_rdy, temp);
 
-
   end
   `VC_TRACE_END
+
+  // These trace modules are useful because they breakout all the
+  // individual fields so you can see them in gtkwave
 
   vc_MemReqMsg4BTrace imem_reqstream_trace
   (
@@ -414,3 +424,4 @@ module lab2_proc_ProcAlt
 endmodule
 
 `endif
+

@@ -145,7 +145,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Waiting for proc to send a val request");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                 sel  sel                         
         test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   ID, ID,  y);
 
@@ -155,7 +155,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Still waiting for proc val request");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt  dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat  en   wen  sel  wrd  wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                 sel  sel                         
         test_outputs(y,   n,   n,   n,   n,   n,   n,   n,   y,   dc,  n,   n,   dc,  dc,  dc,  dc, n,   n,   n,   n,   ID, ID,  y);
 
@@ -171,7 +171,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Transition to MT");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt  rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd  wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd  wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel  sel                        
         test_outputs(n,   n,   n,   n,   y,   n,   n,   n,   y,   PROC,  n,   n,   IDX, OFF, OFF, dc, n,   n,   n,   n,   MT, R0,  n);
 
@@ -179,7 +179,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Transition to R0");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL, OFF, dc, r,   n,   y,   n,   R0, R0,  n);
 
@@ -190,7 +190,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Wait for imem to be ready");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   n,   y,   y,   n,   n,   n,   n,   IMEM,  y,   n,   IDX, REFILL, OFF, dc, r,   n,   y,   n,   R0, R0,  n);
 
@@ -207,7 +207,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Still in R0, send req to imem");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   IMEM,  y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
@@ -217,7 +217,7 @@ module top(  input logic clk, input logic linetrace );
         $display("Wait for imem to have response");
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   y,   y,   y,   n,   y,   n,   n,   IMEM,  y,   n,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
@@ -231,7 +231,7 @@ module top(  input logic clk, input logic linetrace );
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   y,   y,   y,   y,   y,   y,   n,   IMEM,  y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
@@ -245,7 +245,7 @@ module top(  input logic clk, input logic linetrace );
 
         @(negedge clk);
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   n,   n,   y,   y,   y,   n,   y,   n,   IMEM,  y,   y,   IDX, REFILL, dc,  r,  n,   n,   y,   n,   R0, R0,  n);
 
@@ -258,8 +258,8 @@ module top(  input logic clk, input logic linetrace );
         set_inputs(y,   r,     32'dx,  32'dx,  n,   n,   n,   DCMEM,  32'dx,  n,   n,   n,   n,   n,   y,   y);
 
         @(negedge clk);
-        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem cln  dty  val  fsh  st  nxt  inp
-        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act set  set  set  dne      st  en
+        //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx  wrt     rd   mem  cln  dty  val  fsh  st  nxt  inp
+        //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel  wrd     wrd  act  set  set  set  dne      st   en
         //           rdy  val  val  rdy                           sel                   sel     sel                         
         test_outputs(n,   y,   n,   n,   n,   n,   n,   n,   y,   PROC,  y,   n,   IDX, OFF,    OFF, dc,  n,   n,   y,   n,   MD, MD,  n);
 
@@ -673,7 +673,7 @@ module top(  input logic clk, input logic linetrace );
         //           mem  mem  cac  cac  tar  tar  req  res  cnt  wrt    dar  dar  idx    wrt      rd     mem  cln  dty  val  fsh   st   nxt  inp
         //           req  res  req  res  en   wen  en   en   rst  dat    en   wen  sel    wrd      wrd    act  set  set  set  dne        st   en
         //           rdy  val  val  rdy                           sel                     sel      sel                         
-        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   PROC,  y,   n,   IDX,    OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  MT,  n);
+        test_outputs(n,   y,   n,   n,   y,   n,   n,   n,   y,   PROC,  y,   n,   IDX,   OFF,     OFF,   dc,  n,   n,   n,   n,    MT,  MT,  n);
 
         $display("");
         $display("Flush signal goes high, so does memresp_rdy but flush should take precedence");

@@ -6,7 +6,6 @@
 `define LAB3_CACHE_CACHE_ALT_V
 
 `include "vc/mem-msgs.v"
-`include "vc/regs.v"
 `include "CacheAltDpath.v"
 `include "CacheAltCtrl.v"
 
@@ -41,7 +40,8 @@ module lab3_cache_CacheAlt
 // Status signals (dpath -> ctrl)
 logic tarray0_match;
 logic tarray1_match;
-logic line_dirty;
+logic line0_dirty;
+logic line1_dirty;
 logic line0_valid;
 logic line1_valid;
 logic mem_action;

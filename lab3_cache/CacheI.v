@@ -8,6 +8,7 @@
 `include "vc/mem-msgs.v"
 `include "CacheBypass.v"
 `include "CacheBase.v"
+`include "CacheAlt.v"
 
 module lab3_cache_CacheI
 (

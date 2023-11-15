@@ -1,4 +1,7 @@
 `include "vc/mem-msgs.v"
+`include "vc/regs.v"
+`include "vc/arithmetic.v"
+`include "vc/muxes.v"
 
 module lab3_cache_CacheAltDpath
 (
@@ -7,21 +10,13 @@ module lab3_cache_CacheAltDpath
 
 
     // imem: connection between proc and cache
-    input  logic                    memreq_val,
-    output logic                    memreq_rdy,
-    input  mem_req_4B_t             memreq_msg, 
+    input  mem_req_4B_t             memreq_msg,
 
-    output logic                    memresp_val,
-    input  logic                    memresp_rdy,
     output mem_resp_4B_t            memresp_msg,
 
     //cache: connection between cache and imem
-    output  logic                    cache_req_val,
-    input   logic                    cache_req_rdy,
     output  mem_req_4B_t             cache_req_msg,
- 
-    input  logic                     cache_resp_val,
-    output logic                     cache_resp_rdy,
+
     input  mem_resp_4B_t             cache_resp_msg,
 
     // flush
@@ -32,7 +27,8 @@ module lab3_cache_CacheAltDpath
     // Status signals (dpath -> ctrl)
     output logic tarray0_match,
     output logic tarray1_match,
-    output logic line_dirty,
+    output logic line0_dirty,
+    output logic line1_dirty,
     output logic line0_valid,
     output logic line1_valid,
     output logic incoming_mem_type,
@@ -112,14 +108,14 @@ assign mem_req_tag = cache_req_msg.addr[31:11];
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
     if (!way_select) begin
-        if (tarray_en && tarray_wen && cache_resp_val) tag0[incoming_index] <= mem_req_tag;
+        if (tarray_en && tarray_wen) tag0[incoming_index] <= mem_req_tag;
     end else begin
-        if (tarray_en && tarray_wen && cache_resp_val) tag1[incoming_index] <= mem_req_tag;
+        if (tarray_en && tarray_wen) tag1[incoming_index] <= mem_req_tag;
     end
 end
 
-assign tarray0_match = ((incoming_tag == tag0[incoming_index]) && tarray_en);
-assign tarray1_match = ((incoming_tag == tag1[incoming_index]) && tarray_en);
+assign tarray0_match = (incoming_tag == tag0[incoming_index]);
+assign tarray1_match = (incoming_tag == tag1[incoming_index]);
 
 // Data array (indexed by line, word) ----------------------
 logic [31:0] data0 [31:0][15:0];
@@ -344,19 +340,9 @@ always_ff @(posedge clk) begin
     end
 end
 
-logic line0_dirty;
 assign line0_dirty = (dirty0[incoming_index] == 1'b1);
 
-logic line1_dirty;
 assign line1_dirty = (dirty1[incoming_index] == 1'b1);
-
-vc_Mux2#(1) line_dirty_mux
-(
-    .in0(line0_dirty),
-    .in1(line1_dirty),
-    .sel(way_select),
-    .out(line_dirty)
-);
 
 // Valid arrays ----------------------------------------------------
 logic [31:0] valid0;
@@ -374,6 +360,7 @@ always_ff @(posedge clk) begin
 end
 
 assign line0_valid = (valid0[incoming_index] == 1'b1);
+
 assign line1_valid = (valid1[incoming_index] == 1'b1);
 
 // Memory messages ---------------------------------------
