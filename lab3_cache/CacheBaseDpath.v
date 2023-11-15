@@ -1,4 +1,7 @@
 `include "vc/mem-msgs.v"
+`include "vc/regs.v"
+`include "vc/arithmetic.v"
+`include "vc/muxes.v"
 
 module lab3_cache_CacheBaseDpath
 (
@@ -7,21 +10,13 @@ module lab3_cache_CacheBaseDpath
 
 
     // imem: connection between proc and cache
-    input  logic                    memreq_val,
-    output logic                    memreq_rdy,
     input  mem_req_4B_t             memreq_msg, 
 
-    output logic                    memresp_val,
-    input  logic                    memresp_rdy,
     output mem_resp_4B_t            memresp_msg,
 
     //cache: connection between cache and imem
-    output  logic                    cache_req_val,
-    input   logic                    cache_req_rdy,
     output  mem_req_4B_t             cache_req_msg,
- 
-    input  logic                     cache_resp_val,
-    output logic                     cache_resp_rdy,
+    
     input  mem_resp_4B_t             cache_resp_msg,
 
     // flush
@@ -87,7 +82,6 @@ assign incoming_mem_type = incoming_msg[74];
 assign proc_write_data = incoming_msg[31:0];
 
 // Inputs from proceessor ------------------------------------------
-
 vc_EnResetReg#(77, 0) mem_msg_reg
 (
     .clk(clk),
@@ -96,6 +90,7 @@ vc_EnResetReg#(77, 0) mem_msg_reg
     .d(memreq_msg),
     .q(incoming_msg)
 );
+// assign incoming_msg = memreq_msg;
 
 // Tag array ---------------------------------------
 logic [20:0] tag [31:0];
@@ -105,10 +100,10 @@ assign mem_req_tag = cache_req_msg.addr[31:11];
 
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
-    if (tarray_en && tarray_wen && cache_resp_val) tag[incoming_index] <= mem_req_tag;
+    if (tarray_en && tarray_wen) tag[incoming_index] <= mem_req_tag;
 end
 
-assign tarray_match = ((incoming_tag == tag[incoming_index]) && tarray_en);
+assign tarray_match = ((incoming_tag == tag[incoming_index]));
 
 // Data array (indexed by line, word) ----------------------
 logic [31:0] data [31:0][15:0];
@@ -134,7 +129,6 @@ vc_Mux2#(5) index_mux
 );
 
 // -- Select write word offset source
-
 vc_Mux2#(4) write_data_word_mux
 (
     .in0(incoming_word_offset),
