@@ -1,7 +1,7 @@
 //========================================================================
 // utb_CacheBaseCtrl
 //========================================================================
-// A basic Verilog unit test bench for the Cache Base Control module
+// A basic Verilog unit test bench for the Cache Base Datapath module
 
 `default_nettype none
 `timescale 1ps/1ps
