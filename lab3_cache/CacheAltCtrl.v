@@ -5,6 +5,7 @@ module lab3_cache_CacheAltCtrl
     input  logic                    clk,
     input  logic                    reset,
 
+    // NOTE: msg's and default cases do not show up on coverage report due to inability to set all bits in a meaningful way
 
     // imem: connection between proc and cache
     input  logic                    memreq_val,

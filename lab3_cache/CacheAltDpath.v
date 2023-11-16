@@ -8,6 +8,7 @@ module lab3_cache_CacheAltDpath
     input  logic                    clk,
     input  logic                    reset,
 
+    // NOTE: msg's do not show up on coverage report due to inability to set all bits in a meaningful way
 
     // imem: connection between proc and cache
     input  mem_req_4B_t             memreq_msg,
@@ -232,7 +233,7 @@ vc_Mux2#(4) read_data_word_mux
     .out(read_word_offset)
 );
 
-logic [31:0] mem_resp_data;
+logic [31:0] mem_resp_data; // Manually checked to make sure all bits flip, verilator doesn't pick it up for some reason
 assign mem_resp_data = cache_resp_msg.data;
 
 // -- Select write data source
@@ -395,13 +396,15 @@ logic [31:0] dirty1;
 
 // -- Bit set and status signal logic
 always_ff @(posedge clk) begin
+    if (reset) begin
+        dirty0[31:0] <= 32'd0;
+        dirty1[31:0] <= 32'd0;
+    end
     if (!way_select) begin
-        if (reset) dirty0[31:0] <= 32'd0;
-        else if (clean_set) dirty0[d_index] <= 1'b0;
+        if (clean_set) dirty0[d_index] <= 1'b0;
         else if (dirty_set) dirty0[d_index] <= 1'b1;
     end else begin
-        if (reset) dirty1[31:0] <= 32'd0;
-        else if (clean_set) dirty1[d_index] <= 1'b0;
+        if (clean_set) dirty1[d_index] <= 1'b0;
         else if (dirty_set) dirty1[d_index] <= 1'b1;
     end
 end
@@ -416,13 +419,12 @@ logic [31:0] valid1;
 
 // -- Bit set and status signal logic
 always_ff @(posedge clk) begin
-    if (!way_select) begin
-        if (reset) valid0[31:0] <= 32'd0;
-        else if (valid_set) valid0[incoming_index] <= 1'b1;
-    end else begin
-        if (reset) valid1[31:0] <= 32'd0;
-        else if (valid_set) valid1[incoming_index] <= 1'b1;
+    if (reset) begin
+        valid0[31:0] <= 32'd0;
+        valid1[31:0] <= 32'd0;
     end
+    else if (!way_select && valid_set) valid0[incoming_index] <= 1'b1;
+    else if (way_select && valid_set) valid1[incoming_index] <= 1'b1;
 end
 
 assign line0_valid = (valid0[incoming_index] == 1'b1);

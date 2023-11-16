@@ -8,6 +8,7 @@ module lab3_cache_CacheBaseDpath
     input  logic                    clk,
     input  logic                    reset,
 
+    // NOTE: msg's do not show up on coverage report due to inability to set all bits in a meaningful way
 
     // imem: connection between proc and cache
     input  mem_req_4B_t             memreq_msg, 
@@ -182,7 +183,7 @@ vc_Mux2#(4) read_data_word_mux
     .out(read_word_offset)
 );
 
-logic [31:0] mem_resp_data;
+logic [31:0] mem_resp_data; // Manually checked to make sure all bits flip, verilator doesn't pick it up for some reason
 assign mem_resp_data = cache_resp_msg.data;
 
 // -- Select write data source

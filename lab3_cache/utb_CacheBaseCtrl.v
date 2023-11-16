@@ -18,6 +18,8 @@ module top(  input logic clk, input logic linetrace );
 
     logic                    reset;
 
+    // NOTE: msg's and default cases do not show up on coverage report due to inability to set all bits in a meaningful way
+
     // imem: connection between proc and cache
     logic                    memreq_val;
     logic                    memreq_rdy;
@@ -440,12 +442,13 @@ module top(  input logic clk, input logic linetrace );
         $display("");
         $display("Both counters done -> transition to R0, imem not ready to receive");
         delay( $urandom_range(0, 127) );
+        @(posedge clk);
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
         set_inputs(y,   w,     32'dx,  32'dx,  n,   n,   n,   WRITE,  32'dx,  n,   n,   n,   n,   y,   y,   y);
 
-        @(posedge clk); // Reset counters back to 0
+        @(negedge clk); // Reset counters back to 0
         //         mem  mem    mem     mem     mem  cac  cac  cac     cac     fsh  all  tar  lin  lne  req  res
         //         req  req    req     req     res  req  res  res     res          fsh  mat  dty  val  dne  dne
         //         val  typ    adr     dat     rdy  rdy  val  typ     dat                              
