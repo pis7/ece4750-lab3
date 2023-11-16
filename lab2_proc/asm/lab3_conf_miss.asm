@@ -8,4 +8,4 @@ addi x4, x3, 1
 sw x4, 0(x2)
 sw x3, 0(x5)
 
-csrw proc2mngr, x4 > 7
+csrw proc2mngr, x3 > 7
