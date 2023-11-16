@@ -100,6 +100,40 @@ assign mem_req_tag = cache_req_msg.addr[31:11];
 
 // -- Tag match and write logic
 always_ff @(posedge clk) begin
+    if(reset) begin
+        tag[0] <= 21'd0;
+        tag[1] <= 21'd0;
+        tag[2] <= 21'd0;
+        tag[3] <= 21'd0;
+        tag[4] <= 21'd0;
+        tag[5] <= 21'd0;
+        tag[6] <= 21'd0;
+        tag[7] <= 21'd0;
+        tag[8] <= 21'd0;
+        tag[9] <= 21'd0;
+        tag[10] <= 21'd0;
+        tag[11] <= 21'd0;
+        tag[12] <= 21'd0;
+        tag[13] <= 21'd0;
+        tag[14] <= 21'd0;
+        tag[15] <= 21'd0;
+        tag[16] <= 21'd0;
+        tag[17] <= 21'd0;
+        tag[18] <= 21'd0;
+        tag[19] <= 21'd0;
+        tag[20] <= 21'd0;
+        tag[21] <= 21'd0;
+        tag[22] <= 21'd0;
+        tag[23] <= 21'd0;
+        tag[24] <= 21'd0;
+        tag[25] <= 21'd0;
+        tag[26] <= 21'd0;
+        tag[27] <= 21'd0;
+        tag[28] <= 21'd0;
+        tag[29] <= 21'd0;
+        tag[30] <= 21'd0;
+        tag[31] <= 21'd0;
+    end
     if (tarray_en && tarray_wen) tag[incoming_index] <= mem_req_tag;
 end
 

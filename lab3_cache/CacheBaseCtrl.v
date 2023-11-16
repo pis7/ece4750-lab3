@@ -246,7 +246,7 @@ always_comb begin
             //  mem    mem   cache  cache  tarray  tarray  req       resp      count   write  darray  darray  index  write  read  mem     clean  dirty  valid  flush  input
             //  req    resp  req    resp   en      wen     count_en  count_en  reset   data   en      wen     sel    word   word  action  set    set    set    done   en
             //  rdy    val   val    rdy                                                sel                           sel    sel
-            tab(y,     n,    n,     n,     n,      n,      n,        n,        y,      dc,    n,      n,      dc,    dc,    dc,   dc,   n,     n,      n,      n,     y);
+            tab(y,     n,    n,     n,     n,      n,      n,        n,        y,      dc,    n,      n,      dc,    dc,    dc,   dc,     n,     n,      n,      n,     y);
         end
         MT: begin // Check tag after request has been made to cache, return value upon hit
 

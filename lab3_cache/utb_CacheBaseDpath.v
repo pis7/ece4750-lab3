@@ -116,13 +116,13 @@ module top(  input logic clk, input logic linetrace );
 
     initial begin
         //--------------------------------------------------------------------
-        // Unit Testing #1 Test Refill on Read Miss - Invalid Line
+        // Unit Test 1: Read Miss + Refill
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
 
         $display("");
         $display("---------------------------------------");
-        $display("Unit Test 1: Read Miss");
+        $display("Unit Test 1: Read Miss + Refill");
         $display("---------------------------------------");
 
         reset = 1;
@@ -240,7 +240,7 @@ module top(  input logic clk, input logic linetrace );
         delay( $urandom_range(0, 127) );
 
         //--------------------------------------------------------------------
-        // Unit Testing #1 Test Refill on Read Miss - Invalid Line
+        // Unit Test 2: Write Hit
         //--------------------------------------------------------------------
         // Initalize all the signal inital values.
 
@@ -249,25 +249,236 @@ module top(  input logic clk, input logic linetrace );
         $display("Unit Test 2: Write Hit");
         $display("---------------------------------------");
 
-        reset = 1;
         @(negedge clk);
-        reset = 0;
-        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd   mem  cln  dty  val  st  mem           mem            mem    cac    cac
-        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set  set      adr           dat            typ    res    res
-        //                                  en   en        sel                  sel  sel                                                              dat    typ
-        set_inputs(n,   n,   y,   y,   n,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF, dc,  n,   y,   n,   MT, 32'hFFFFFFFF, 32'hFFFFFFFF,  WRITE, 32'dx, 3'dx);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd   mem  cln  dty  val  st  mem           mem     mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set  set      adr           dat     typ    res    res
+        //                                  en   en        sel                  sel  sel                                                       dat    typ
+        set_inputs(n,   n,   y,   y,   n,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF, dc,  n,   y,   n,   MT, 32'hFFFFFFFF, 32'd0,  WRITE, 32'dx, 3'dx);
 
         $display("");
         $display("Write hit in MT");
         @(negedge clk);
-        //           tar  lin  lin  inc  req  res  all  mem   mem    cac   cac           cac    d      wrt   rd    wrt    dty    val    fsh
-        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req   req           req    idx    wrd   wrd   dat                  idx
-        //                          typ  dne  dne       typ   dat    typ   adr           dat           off   off
-        test_outputs(n,   n,   n,   r,   n,   n,   y,   3'dx, 32'dx, 3'dx, 32'hFFFFFFC3, 32'dx, 5'h1F, 4'hF, 4'hF, 32'dx, 32'd0, 32'd0, 5'dx);
+        //           tar  lin  lin  inc  req  res  all  mem    mem    cac   cac           cac    d      wrt   rd    wrt    dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res    req   req           req    idx    wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ    dat    typ   adr           dat           off   off
+        test_outputs(y,   y,   y,   w,   n,   n,   n,   WRITE, 32'dx, 3'dx, 32'hFFFFFFC3, 32'dx, 5'h1F, 4'hF, 4'hF, 32'd0, 32'h80000000, 32'h80000000, 5'h1F);
 
         delay( $urandom_range(0, 127) );
 
+        //--------------------------------------------------------------------
+        // Unit Test 3: Write Miss + Evict
+        //--------------------------------------------------------------------
+        // Initalize all the signal inital values.
 
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 3: Write Miss + Evict");
+        $display("---------------------------------------");
+
+        @(negedge clk);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd   mem  cln  dty  val  st  mem           mem            mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set  set      adr           dat            typ    res    res
+        //                                  en   en        sel                  sel  sel                                                              dat    typ
+        set_inputs(n,   n,   y,   y,   n,   n,   n,   y,   PROC, y,   n,   IDX, OFF, OFF, dc,  n,   y,   n,   MT, 32'h0FFFFFFF, 32'hFFFFFFFF,  WRITE, 32'dx, 3'dx);
+
+        $display("");
+        $display("Write miss in MT - line is dirty");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem    mem    cac   cac           cac    d      wrt   rd    wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res    req   req           req    idx    wrd   wrd   dat                                       idx
+        //                          typ  dne  dne       typ    dat    typ   adr           dat           off   off
+        test_outputs(n,   y,   y,   w,   n,   n,   n,   WRITE, 32'dx, 3'dx, 32'h0FFFFFC3, 32'dx, 5'h1F, 4'hF, 4'hF, 32'hFFFFFFFF, 32'h80000000, 32'h80000000, 5'h1F);
+
+        @(negedge clk);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd     mem  cln  dty  val  st  mem           mem            mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd    act  set  set  set      adr           dat            typ    res    res
+        //                                  en   en        sel                  sel  sel                                                                dat    typ
+        set_inputs(n,   n,   n,   n,   n,   n,   n,   n,   PROC, y,   n,   IDX, OFF, EVICT, w,   y,   n,   n,   E0, 32'h0FFFFFFF, 32'hFFFFFFFF,  WRITE, 32'dx, 3'dx);
+
+        $display("");
+        $display("Evict initialized - wait for mem ready");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem    mem           cac    cac           cac           d      wrt   rd    wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res           req    req           req           idx    wrd   wrd   dat                                       idx
+        //                          typ  dne  dne       typ    dat           typ    adr           dat                  off   off
+        test_outputs(n,   n,   y,   w,   n,   n,   y,   WRITE, 32'hFFFFFFFF, WRITE, 32'hFFFFFFC3, 32'hFFFFFFFF, 5'h1F, 4'hF, 4'd0, 32'hFFFFFFFF, 32'h00000000, 32'h80000000, 5'd0);
+
+        delay( $urandom_range(0, 127) );
+
+        @(negedge clk);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd     mem  cln  dty  val  st  mem           mem            mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd    act  set  set  set      adr           dat            typ    res    res
+        //                                  en   en        sel                  sel  sel                                                                dat    typ
+        set_inputs(n,   n,   n,   n,   n,   y,   y,   n,   PROC, y,   n,   IDX, OFF, EVICT, w,   y,   n,   n,   E0, 32'h0FFFFFFF, 32'hFFFFFFFF,  WRITE, 32'dx, 3'dx);
+
+        $display("");
+        $display("Mem ready to receive and respond");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem    mem           cac    cac           cac           d      wrt   rd    wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res           req    req           req           idx    wrd   wrd   dat                                       idx
+        //                          typ  dne  dne       typ    dat           typ    adr           dat                  off   off
+        test_outputs(n,   n,   y,   w,   n,   n,   y,   WRITE, 32'hFFFFFFFF, WRITE, 32'hFFFFFFC7, 32'hFFFFFFFF, 5'h1F, 4'hF, 4'd1, 32'hFFFFFFFF, 32'h00000000, 32'h80000000, 5'd0);
+
+        $display("");
+        $display("Evict cycle 1");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem    mem           cac    cac           cac           d      wrt   rd    wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res           req    req           req           idx    wrd   wrd   dat                                       idx
+        //                          typ  dne  dne       typ    dat           typ    adr           dat                  off   off
+        test_outputs(n,   n,   y,   w,   n,   n,   y,   WRITE, 32'hFFFFFFFF, WRITE, 32'hFFFFFFCB, 32'hFFFFFFFF, 5'h1F, 4'hF, 4'd2, 32'hFFFFFFFF, 32'h00000000, 32'h80000000, 5'd0);
+
+        @(negedge clk); // cycle 2
+        @(negedge clk); // cycle 3
+        @(negedge clk); // cycle 4
+        @(negedge clk); // cycle 5
+        @(negedge clk); // cycle 6
+        @(negedge clk); // cycle 7
+        @(negedge clk); // cycle 8
+        @(negedge clk); // cycle 9
+        @(negedge clk); // cycle 10
+        @(negedge clk); // cycle 11
+        @(negedge clk); // cycle 12
+        @(negedge clk); // cycle 13
+
+        $display("");
+        $display("Evict cycle 14");
+        //           tar  lin  lin  inc  req  res  all  mem    mem           cac    cac           cac           d      wrt   rd     wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res           req    req           req           idx    wrd   wrd    dat                                       idx
+        //                          typ  dne  dne       typ    dat           typ    adr           dat                  off   off
+        test_outputs(n,   n,   y,   w,   n,   n,   y,   WRITE, 32'hFFFFFFFF, WRITE, 32'hFFFFFFFB, 32'hFFFFFFFF, 5'h1F, 4'hF, 4'd14, 32'hFFFFFFFF, 32'h00000000, 32'h80000000, 5'd0);
+
+        @(negedge clk);
+        $display("");
+        $display("Evict cycle 15");
+        //           tar  lin  lin  inc  req  res  all  mem    mem           cac    cac           cac           d      wrt   rd     wrt           dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res    res           req    req           req           idx    wrd   wrd    dat                                       idx
+        //                          typ  dne  dne       typ    dat           typ    adr           dat                  off   off
+        test_outputs(n,   n,   y,   w,   n,   n,   y,   WRITE, 32'h00000000, WRITE, 32'hFFFFFFFF, 32'h00000000, 5'h1F, 4'hF, 4'd15, 32'hFFFFFFFF, 32'h00000000, 32'h80000000, 5'd0);
+
+        //--------------------------------------------------------------------
+        // Unit Test 3: Write Miss + Evict
+        //--------------------------------------------------------------------
+        // Initalize all the signal inital values.
+
+        $display("");
+        $display("---------------------------------------");
+        $display("Unit Test 4: Flush");
+        $display("---------------------------------------");
+
+        reset = 1;
+        @(negedge clk);
+        reset = 0;
+
+        $display("");
+        $display("Fill dirty and valid arrays for flush");
+        for (int i = 0; i <= 6'd32; i += 1) begin
+            @(negedge clk);
+            //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd   mem  cln  dty  val  st  mem               mem     mem    cac    cac
+            //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set  set      adr               dat     typ    res    res
+            //                                  en   en        sel                  sel  sel                                                           dat    typ
+            set_inputs(n,   n,   y,   y,   n,   n,   n,   y,   PROC, n,   n,   IDX, OFF, OFF, dc,  n,   y,   y,   MT, {21'd0, i[4:0], 6'd0}, 32'hx,  READ,  32'dx, 3'd0);
+        end
+
+        $display("");
+        $display("Confirm dirty");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac   cac    cac    d      wrt   rd    wrt   dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req   req    req    idx    wrd   wrd   dat                               idx
+        //                          typ  dne  dne       typ   dat    typ   adr    dat           off   off
+        test_outputs(y,   y,   y,   r,   n,   n,   n,   3'dx, 32'dx, 3'dx, 32'd0, 32'dx, 5'd0, 4'd0, 4'd0, 32'd0, 32'hFFFFFFFF, 32'hFFFFFFFF, 5'd0);
+
+        delay( $urandom_range(0, 127) );
+
+        $display("");
+        $display("Flush signal obtained - flush");
+        @(negedge clk);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+        //                                  en   en        sel                    sel  sel                                                   dat    typ
+        set_inputs(y,   n,   n,   n,   n,   y,   y,   n,   PROC, n,   n,   FLUSH, OFF, EVICT, w,   n,   n,   n,   FL, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac    cac    d      wrt   rd    wrt   dty           val            fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req    req    idx    wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr    dat           off   off
+        test_outputs(y,   y,   y,   r,   n,   n,   n,   3'dx, 32'dx, WRITE, 32'd4, 32'dx, 5'd0,  4'd0, 4'd1, 32'd0, 32'hFFFFFFFF, 32'hFFFFFFFF, 5'd0);
+
+        $display("");
+        $display("Flush cycle 2");
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac    cac    d      wrt   rd    wrt    dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req    req    idx    wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr    dat           off   off
+        test_outputs(y,   y,   y,   r,   n,   n,   n,   3'dx, 32'dx, WRITE, 32'd8, 32'dx, 5'd0,  4'd0, 4'd2, 32'd0, 32'hFFFFFFFF, 32'hFFFFFFFF, 5'd0);
+
+        for (int i = 0; i <= 5'd13; i += 1) @(negedge clk);
+
+        $display("");
+        $display("Flush done");
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac      cac    d      wrt   rd    wrt    dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req      req    idx    wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr      dat           off   off
+        test_outputs(y,   y,   y,   r,   y,   y,   n,   3'dx, 32'dx, WRITE, 32'd0,   32'dx, 5'd0,  4'd0, 4'd0, 32'd0, 32'hFFFFFFFF, 32'hFFFFFFFF, 5'd0);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+        //                                  en   en        sel                    sel  sel                                                   dat    typ
+        set_inputs(y,   n,   n,   n,   n,   y,   y,   y,   PROC, n,   n,   FLUSH, OFF, EVICT, w,   y,   n,   n,   FL, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+
+        $display("");
+        $display("First line flushed - flush next line");
+        @(negedge clk);
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+        //                                  en   en        sel                    sel  sel                                                   dat    typ
+        set_inputs(y,   n,   n,   n,   n,   y,   y,   n,   PROC, n,   n,   FLUSH, OFF, EVICT, w,   n,   n,   n,   FL, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+
+
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac      cac    d      wrt   rd    wrt    dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req      req    idx    wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr      dat           off   off
+        test_outputs(y,   n,   y,   r,   n,   n,   n,   3'dx, 32'dx, WRITE, 32'd68,  32'dx, 5'd1,  4'd0, 4'd1, 32'd0, 32'hFFFFFFFE, 32'hFFFFFFFF, 5'd1);
+
+        @(negedge clk);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac     cac    d       wrt   rd    wrt   dty            val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req     req    idx     wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr     dat            off   off
+        test_outputs(y,   n,   y,   r,   n,   n,   n,   3'dx, 32'dx, WRITE, 32'd72, 32'dx, 5'd1,   4'd0, 4'd2, 32'd0, 32'hFFFFFFFE, 32'hFFFFFFFF, 5'd1);
+
+        for (int i = 0; i <= 5'd13; i += 1) @(negedge clk);
+
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac     cac    d       wrt   rd    wrt    dty           val           fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req     req    idx     wrd   wrd   dat                                idx
+        //                          typ  dne  dne       typ   dat    typ    adr     dat            off   off
+        test_outputs(y,   n,   y,   r,   y,   y,   n,   3'dx, 32'dx, WRITE, 32'd64, 32'dx, 5'd1,   4'd0, 4'd0, 32'd0, 32'hFFFFFFFE, 32'hFFFFFFFF, 5'd1);
+
+        $display("");
+        $display("Flush all lines");
+        for (int i = 0; i < 6'd32; i += 1) begin
+
+            //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+            //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+            //                                  en   en        sel                    sel  sel                                                   dat    typ
+            set_inputs(y,   n,   n,   n,   n,   y,   y,   y,   PROC, n,   n,   FLUSH, OFF, EVICT, w,   y,   n,   n,   FL, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+
+            @(negedge clk);
+            //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+            //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+            //                                  en   en        sel                    sel  sel                                                   dat    typ
+            set_inputs(y,   n,   n,   n,   n,   y,   y,   n,   PROC, n,   n,   FLUSH, OFF, EVICT, w,   n,   n,   n,   FL, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+
+            for (int j = 0; j <= 5'd15; j += 1) @(negedge clk);
+
+        end
+
+        //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx    wrt  rd     mem  cln  dty  val  st  mem     mem     mem    cac    cac
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel    wrd  wrd    act  set  set  set      adr     dat     typ    res    res
+        //                                  en   en        sel                    sel  sel                                                   dat    typ
+        set_inputs(n,   y,   n,   n,   n,   n,   n,   y,   PROC, n,   n,   PROC,  OFF, OFF,   w,   y,   n,   n,   ID, 32'd0,  32'hx,  READ,  32'dx, 3'd0);
+        //           tar  lin  lin  inc  req  res  all  mem   mem    cac    cac     cac    d       wrt   rd    wrt    dty     val          fsh
+        //           mat  dty  val  mem  cnt  cnt  fsh  res   res    req    req     req    idx     wrd   wrd   dat                         idx
+        //                          typ  dne  dne       typ   dat    typ    adr     dat            off   off
+        test_outputs(y,   n,   y,   r,   y,   y,   y,   3'dx, 32'dx, WRITE, 32'd0, 32'dx,  5'd0,   4'd0, 4'd0, 32'd0, 32'd0, 32'hFFFFFFFF, 5'd0);
         
         delay( $urandom_range(0, 127) );
 
