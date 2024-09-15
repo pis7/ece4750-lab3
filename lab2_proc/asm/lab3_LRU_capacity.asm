@@ -9,8 +9,3 @@ addi x3, x3, 1
 bne x1, x4, loop
 
 csrw proc2mngr, x1 > 0x3000
-
-
-
-
-

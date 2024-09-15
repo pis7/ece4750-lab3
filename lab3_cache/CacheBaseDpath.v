@@ -10,12 +10,12 @@ module lab3_cache_CacheBaseDpath
 
     // NOTE: msg's do not show up on coverage report due to inability to set all bits in a meaningful way
 
-    // imem: connection between proc and cache
+    // mem: connection between proc and cache
     input  mem_req_4B_t             memreq_msg, 
 
     output mem_resp_4B_t            memresp_msg,
 
-    //cache: connection between cache and imem
+    // cache: connection between cache and imem
     output  mem_req_4B_t             cache_req_msg,
     
     input  mem_resp_4B_t             cache_resp_msg,
@@ -91,7 +91,6 @@ vc_EnResetReg#(77, 0) mem_msg_reg
     .d(memreq_msg),
     .q(incoming_msg)
 );
-// assign incoming_msg = memreq_msg;
 
 // Tag array ---------------------------------------
 logic [20:0] tag [31:0];
@@ -325,7 +324,7 @@ always_comb begin
     end
 end
 
-// imem msg
+// mem msg
 assign cache_req_msg.type_ = {2'b00, mem_action};
 assign cache_req_msg.opaque = 8'b0;
 assign cache_req_msg.addr = req_addr_mem;

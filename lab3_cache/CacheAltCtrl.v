@@ -7,7 +7,7 @@ module lab3_cache_CacheAltCtrl
 
     // NOTE: msg's and default cases do not show up on coverage report due to inability to set all bits in a meaningful way
 
-    // imem: connection between proc and cache
+    // mem: connection between proc and cache
     input  logic                    memreq_val,
     output logic                    memreq_rdy,
     input  mem_req_4B_t             memreq_msg, 
@@ -16,7 +16,7 @@ module lab3_cache_CacheAltCtrl
     input  logic                    memresp_rdy,
     output mem_resp_4B_t            memresp_msg,
 
-    //cache: connection between cache and imem
+    // cache: connection between cache and imem
     output  logic                    cache_req_val,
     input   logic                    cache_req_rdy,
     output  mem_req_4B_t             cache_req_msg,
@@ -92,7 +92,7 @@ localparam FLUSH = 1'd1;
 localparam PROC = 1'd0;
 localparam IMEM = 1'd1;
 
-// imem action
+// mem action
 localparam READ = `VC_MEM_REQ_MSG_TYPE_READ;
 localparam WRITE = `VC_MEM_REQ_MSG_TYPE_WRITE;
 localparam DCMEM = 3'dx;
@@ -106,7 +106,6 @@ localparam MD = 3'd4; // Data access (R/W)
 localparam FL = 3'd5; // Flush
 
 // Signal set function
-
 function void tab
 (
     input logic t_memreq_rdy,
@@ -228,7 +227,7 @@ always_comb begin
                     set_way1 = 1'b1;
                     way_select = 1'b0;
                 end
-                else begin // guarenteed to be tarray1_match since hit already determined
+                else begin // Guarenteed to be tarray1_match since hit already determined
                     set_way0 = 1'b1;
                     set_way1 = 1'b0;
                     way_select = 1'b1;
@@ -257,7 +256,7 @@ always_comb begin
         end
         R0: begin // Refill data from memory on miss
 
-            // Go to R0 if refill of line is done
+            // Go to MD if refill of line is done
             if (counts_done) nextState = MD;
             else nextState = R0;
 
@@ -268,7 +267,7 @@ always_comb begin
         end
         MD: begin // Perform data access and respond to proc if read
 
-            // Go to MT if proc was ready to receive data
+            // Go to MT if proc was ready to receive data, go to ID if same condition but no incoming requests
             if (memresp_rdy && !memreq_val) nextState = ID;
             else if (memresp_rdy && memreq_val) nextState = MT;
             else nextState = MD;

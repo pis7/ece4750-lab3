@@ -14,7 +14,7 @@ module lab3_cache_CacheAlt
   input  logic                    clk,
   input  logic                    reset,
 
-  // imem: connection between proc and cache
+  // mem: connection between proc and cache
   input  logic                    memreq_val,
   output logic                    memreq_rdy,
   input  mem_req_4B_t             memreq_msg,
@@ -23,7 +23,7 @@ module lab3_cache_CacheAlt
   input  logic                    memresp_rdy,
   output mem_resp_4B_t            memresp_msg,
 
-  //cache: connection between cache and imem
+  // cache: connection between cache and imem
   output  logic                    cache_req_val,
   input   logic                    cache_req_rdy,
   output  mem_req_4B_t             cache_req_msg,

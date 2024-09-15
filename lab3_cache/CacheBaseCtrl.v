@@ -5,8 +5,9 @@ module lab3_cache_CacheBaseCtrl
     input  logic                    clk,
     input  logic                    reset,
 
+    // NOTE: msg's and default cases do not show up on coverage report due to inability to set all bits in a meaningful way
 
-    // imem: connection between proc and cache
+    // mem: connection between proc and cache
     input  logic                    memreq_val,
     output logic                    memreq_rdy,
     input  mem_req_4B_t             memreq_msg,
@@ -15,7 +16,7 @@ module lab3_cache_CacheBaseCtrl
     input  logic                    memresp_rdy,
     output mem_resp_4B_t            memresp_msg,
 
-    //cache: connection between cache and imem
+    // cache: connection between cache and imem
     output  logic                    cache_req_val,
     input   logic                    cache_req_rdy,
     output  mem_req_4B_t             cache_req_msg,
@@ -85,7 +86,7 @@ localparam FLUSH = 1'd1;
 localparam PROC = 1'd0;
 localparam IMEM = 1'd1;
 
-// imem action
+// mem action
 localparam READ = `VC_MEM_REQ_MSG_TYPE_READ;
 localparam WRITE = `VC_MEM_REQ_MSG_TYPE_WRITE;
 localparam DCMEM = 3'dx;
@@ -99,7 +100,6 @@ localparam MD = 3'd4; // Data access (R/W)
 localparam FL = 3'd5; // Flush
 
 // Signal set function
-
 function void tab
 (
     input logic t_memreq_rdy,
@@ -155,7 +155,6 @@ end
 endfunction
 
 // Combinational signals for states
-
 logic hit;
 logic hit_write;
 logic req_write;
@@ -210,14 +209,14 @@ always_comb begin
             end
         R0: begin // Refill data from memory on miss
 
-            // Go to R0 if refill of line is done
+            // Go to MD if refill of line is done
             if (counts_done) nextState = MD;
             else nextState = R0;
 
         end
         MD: begin // Perform data access and respond to proc if read
 
-            // Go to MT if proc was ready to receive data
+            // Go to MT if proc was ready to receive data, go to ID if same condition but no incoming requests
             if (memresp_rdy && !memreq_val) nextState = ID;
             else if (memresp_rdy && memreq_val) nextState = MT;
             else nextState = MD;
@@ -246,7 +245,7 @@ always_comb begin
             //  mem    mem   cache  cache  tarray  tarray  req       resp      count   write  darray  darray  index  write  read  mem     clean  dirty  valid  flush  input
             //  req    resp  req    resp   en      wen     count_en  count_en  reset   data   en      wen     sel    word   word  action  set    set    set    done   en
             //  rdy    val   val    rdy                                                sel                           sel    sel
-            tab(y,     n,    n,     n,     n,      n,      n,        n,        y,      dc,    n,      n,      dc,    dc,    dc,   dc,     n,     n,      n,      n,     y);
+            tab(y,     n,    n,     n,     n,      n,      n,        n,        y,      dc,    n,      n,      dc,    dc,    dc,   dc,     n,     n,     n,     n,     y);
         end
         MT: begin // Check tag after request has been made to cache, return value upon hit
 
@@ -267,7 +266,7 @@ always_comb begin
             //  mem  mem   cache                             cache  tarray  tarray                              req               resp                count          write  darray  darray                               index  write    read  mem     clean  dirty  valid  flush  input
             //  req  resp  req                               resp   en      wen                                 count_en          count_en            reset          data   en      wen                                  sel    word     word  action  set    set    set    done   en
             //  rdy  val   val                               rdy                                                                                                     sel                                                        sel      sel
-            tab(n,   n,    cache_req_rdy && !req_count_done, y,     y,      cache_resp_val && !resp_count_done, inc_req_not_done, inc_resp_not_done,  counts_done,   IMEM,  y,      cache_resp_val && !resp_count_done,  IDX,   REFILL,  dc,   r,      n,     n,     y,     n,   n);
+            tab(n,   n,    cache_req_rdy && !req_count_done, y,     y,      cache_resp_val && !resp_count_done, inc_req_not_done, inc_resp_not_done,  counts_done,   IMEM,  y,      cache_resp_val && !resp_count_done,  IDX,   REFILL,  dc,   r,      n,     n,     y,     n,     n);
         end
         MD: begin // Perform data access and respond to proc if read
 

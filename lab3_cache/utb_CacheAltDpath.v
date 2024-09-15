@@ -1,5 +1,5 @@
 //========================================================================
-// utb_CacheAltCtrl
+// utb_CacheAltDpath
 //========================================================================
 // A basic Verilog unit test bench for the Cache Alt Datapath module
 
@@ -372,7 +372,7 @@ module top(  input logic clk, input logic linetrace );
 
         @(negedge clk);
         //         fsh  fsh  inp  tar  tar  req  res  cnt  wrt   dar  dar  idx  wrt  rd   mem  cln  dty  val  st  mem           mem     mem    cac    cac   way
-        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set  set      adr           dat     typ    res    res   sel
+        //              dne  en   en   wen  cnt  cnt  res  dat   en   wen  sel  wrd  wrd  act  set  set           dat     typ    res    res   sel
         //                                  en   en        sel                  sel  sel                                                       dat    typ
         set_inputs(n,   n,   y,   y,   n,   n,   n,   y,   PROC, y,   y,   IDX, OFF, OFF, dc,  n,   n,   n,   ID, 32'hFFFFFFFF, 32'd0,  WRITE, 32'dx, 3'dx, 0);
         @(negedge clk);

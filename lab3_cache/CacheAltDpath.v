@@ -10,12 +10,12 @@ module lab3_cache_CacheAltDpath
 
     // NOTE: msg's do not show up on coverage report due to inability to set all bits in a meaningful way
 
-    // imem: connection between proc and cache
+    // mem: connection between proc and cache
     input  mem_req_4B_t             memreq_msg,
 
     output mem_resp_4B_t            memresp_msg,
 
-    //cache: connection between cache and imem
+    // cache: connection between cache and imem
     output  mem_req_4B_t             cache_req_msg,
 
     input  mem_resp_4B_t             cache_resp_msg,
@@ -446,7 +446,7 @@ always_comb begin
     end
 end
 
-// imem msg
+// mem msg
 assign cache_req_msg.type_ = {2'b00, mem_action};
 assign cache_req_msg.opaque = 8'b0;
 assign cache_req_msg.addr = req_addr_mem;
@@ -469,7 +469,7 @@ assign all1_flushed = (dirty1 == 32'd0);
 
 assign all_flushed = all0_flushed && all1_flushed;
 
-assign flush_way_sel = all0_flushed;
+assign flush_way_sel = all0_flushed; // Use way 0 as way to flush if way 0 is not completely flushed yet
 
 logic [4:0] flush0_index;
 logic [4:0] flush1_index;
